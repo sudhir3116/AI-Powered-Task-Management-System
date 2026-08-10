@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { OAuth2Client } from "google-auth-library";
 import User from "../models/user.model.js";
+import { sendLoginNotificationEmail } from "./email.service.js";
 
 const normalizeEmail = (email) => {
   if (!email || typeof email !== "string") return "";
@@ -87,6 +88,14 @@ export const loginUserService = async ({ email, password }) => {
 
     const token = createAuthToken(user._id);
 
+    // Asynchronous non-blocking email notification
+    void sendLoginNotificationEmail({
+      email: user.email,
+      name: user.name,
+      loginMethod: "Email/Password",
+      loginTime: new Date(),
+    });
+
     return {
         user: formatUserResponse(user),
         token,
@@ -142,6 +151,14 @@ export const googleAuthService = async (idToken) => {
     }
 
     const token = createAuthToken(user._id);
+
+    // Asynchronous non-blocking email notification
+    void sendLoginNotificationEmail({
+      email: user.email,
+      name: user.name,
+      loginMethod: "Google OAuth",
+      loginTime: new Date(),
+    });
 
     return {
         user: formatUserResponse(user),
