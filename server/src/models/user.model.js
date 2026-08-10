@@ -35,6 +35,10 @@ const userSchema = new mongoose.Schema(
             enum: ["local", "google"],
             default: "local",
         },
+        welcomeEmailSent: {
+            type: Boolean,
+            default: false,
+        },
     },
     {
         timestamps: true,

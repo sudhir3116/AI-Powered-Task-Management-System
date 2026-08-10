@@ -97,14 +97,14 @@ ${description}
 
 Rules:
 - Return ONLY a valid JSON array of strings (no markdown, no code fences, no extra text).
-- Each string is a concise, actionable subtask.
-- Generate between 3 and 7 subtasks.
-- Example output: ["Research the topic", "Create an outline", "Write the first draft"]
+- Each string must be a concise, single actionable step (e.g. "Review assessment syllabus").
+- Do NOT join multiple steps with arrows or symbols like "Aptitude -> Coding -> Mock test".
+- Generate between 3 and 5 subtasks.
+- Example output: ["Review assessment syllabus", "Practice aptitude questions", "Practice coding problems", "Take a mock assessment"]
 `;
 
   try {
     const output = await completionText(prompt, 0.3);
-    // Extract JSON array from output (handle potential surrounding text)
     const match = output.match(/\[[\s\S]*\]/);
     if (!match) return [];
 
@@ -113,7 +113,7 @@ Rules:
 
     return parsed
       .filter((item) => typeof item === "string" && item.trim().length > 0)
-      .slice(0, 7)
+      .slice(0, 5)
       .map((item) => item.trim().slice(0, 200));
   } catch {
     return [];
@@ -170,13 +170,14 @@ User input:
 "${text}"
 
 Rules:
-- Return ONLY a valid JSON object with these fields: title, description, priority, dueDate.
+- Return ONLY a valid JSON object with these fields: title, description, priority, dueDate, subtasks.
 - title: short, clear task name (max 120 characters).
 - description: expanded description of what needs to be done (max 500 characters).
 - priority: exactly one of "High", "Medium", or "Low".
-- dueDate: ISO date string (YYYY-MM-DD) if a date is mentioned, or null if no date mentioned.
-- No markdown, no code fences, no extra text.
-- Example: {"title": "Write project report", "description": "Complete the Q3 project report covering all milestones and deliverables", "priority": "High", "dueDate": "2024-12-31"}
+- dueDate: ISO date string (YYYY-MM-DD) if a date is mentioned or inferable (e.g. "by Friday"), or null if no date mentioned.
+- subtasks: JSON array of 3 to 5 actionable subtask strings relevant to the task, or empty array if none needed.
+- No markdown, no code fences, no extra text outside the JSON object.
+- Example: {"title": "Prepare for TCS assessment", "description": "Prepare for the assessment through focused aptitude and coding practice.", "priority": "High", "dueDate": "2026-08-14", "subtasks": ["Review assessment syllabus", "Practice aptitude questions", "Practice coding problems", "Take a mock assessment"]}
 `;
 
   try {
@@ -186,16 +187,22 @@ Rules:
 
     const parsed = JSON.parse(match[0]);
 
-    // Validate required fields
     if (!parsed.title || !parsed.description) return null;
 
-    // Sanitize and validate
     const allowedPriorities = ["High", "Medium", "Low"];
+    const subtasks = Array.isArray(parsed.subtasks)
+      ? parsed.subtasks
+          .filter((item) => typeof item === "string" && item.trim().length > 0)
+          .slice(0, 5)
+          .map((item) => item.trim().slice(0, 200))
+      : [];
+
     return {
       title: String(parsed.title).trim().slice(0, 120),
       description: String(parsed.description).trim().slice(0, 500),
       priority: allowedPriorities.includes(parsed.priority) ? parsed.priority : "Medium",
       dueDate: parsed.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(parsed.dueDate) ? parsed.dueDate : null,
+      subtasks,
     };
   } catch {
     return null;

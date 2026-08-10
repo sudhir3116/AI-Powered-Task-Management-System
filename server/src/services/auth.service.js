@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { OAuth2Client } from "google-auth-library";
 import User from "../models/user.model.js";
-import { sendLoginNotificationEmail } from "./email.service.js";
+import { sendLoginNotificationEmail, sendWelcomeEmail } from "./email.service.js";
 import logger from "../utils/logger.js";
 
 const normalizeEmail = (email) => {
@@ -52,10 +52,17 @@ export const registerUserService = async (userData) => {
         email: normalizedEmail,
         password: hashedPassword,
         authProvider: "local",
+        welcomeEmailSent: true,
     });
 
     // Generate JWT
     const token = createAuthToken(user._id);
+
+    // Send async welcome email (non-blocking)
+    void sendWelcomeEmail({
+        email: user.email,
+        name: user.name,
+    });
 
     return {
         user: formatUserResponse(user),
@@ -133,6 +140,7 @@ export const googleAuthService = async (idToken) => {
 
     // Find existing user by googleId or email
     let user = await User.findOne({ $or: [{ googleId }, { email: normalizedEmail }] });
+    let isNewUser = false;
 
     if (user) {
         // Link Google account if email matched but no googleId yet
@@ -144,6 +152,7 @@ export const googleAuthService = async (idToken) => {
         }
     } else {
         // Create new Google user
+        isNewUser = true;
         user = await User.create({
             name,
             email: normalizedEmail,
@@ -151,7 +160,15 @@ export const googleAuthService = async (idToken) => {
             avatar: avatar || null,
             authProvider: "google",
             password: null,
+            welcomeEmailSent: true,
         });
+    }
+
+    // If new Google user, send welcome email
+    if (isNewUser || !user.welcomeEmailSent) {
+        user.welcomeEmailSent = true;
+        await user.save();
+        void sendWelcomeEmail({ email: user.email, name: user.name });
     }
 
     const token = createAuthToken(user._id);
