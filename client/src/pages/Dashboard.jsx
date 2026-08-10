@@ -28,7 +28,6 @@ import {
   deleteTask,
   getDeadlineSuggestion,
   getProductivitySuggestions,
-  getSubtaskBreakdown,
   getTaskSummary,
   getTasks,
   parseNaturalLanguage,
@@ -76,7 +75,6 @@ const Dashboard = () => {
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [insights, setInsights] = useState({});
   const [workingAction, setWorkingAction] = useState({});
-  const [aiSubtasksForForm, setAiSubtasksForForm] = useState([]);
   const [productivitySuggestions, setProductivitySuggestions] = useState([]);
   const [loadingProductivity, setLoadingProductivity] = useState(false);
   const [nlText, setNlText] = useState("");
@@ -119,7 +117,6 @@ const Dashboard = () => {
 
   const handleOpenCreate = () => {
     setFormTask(null);
-    setAiSubtasksForForm([]);
     setIsFormOpen(true);
   };
 
@@ -127,7 +124,6 @@ const Dashboard = () => {
     if (!submitting) {
       setIsFormOpen(false);
       setFormTask(null);
-      setAiSubtasksForForm([]);
     }
   };
 
@@ -143,7 +139,6 @@ const Dashboard = () => {
       }
       setIsFormOpen(false);
       setFormTask(null);
-      setAiSubtasksForForm([]);
       updateFilters({ page: 1 });
     } catch (requestError) {
       toast.error(requestError.response?.data?.message || "Unable to save task.");
@@ -207,25 +202,6 @@ const Dashboard = () => {
     }
   };
 
-  const handleAiSubtasks = async (task) => {
-    setWorkingAction((current) => ({ ...current, [task._id]: "subtasks" }));
-    try {
-      const response = await getSubtaskBreakdown({ title: task.title, description: task.description });
-      if (response.subtasks?.length > 0) {
-        setFormTask(task);
-        setAiSubtasksForForm(response.subtasks);
-        setIsFormOpen(true);
-        toast.success(`${response.subtasks.length} subtasks generated!`);
-      } else {
-        toast.error("Could not generate subtasks for this task.");
-      }
-    } catch (requestError) {
-      toast.error(requestError.response?.data?.message || "AI subtask generation failed.");
-    } finally {
-      setWorkingAction((current) => ({ ...current, [task._id]: null }));
-    }
-  };
-
   const handleLoadProductivity = async () => {
     setLoadingProductivity(true);
     try {
@@ -246,7 +222,6 @@ const Dashboard = () => {
       const response = await parseNaturalLanguage(nlText.trim());
       if (response.data) {
         setFormTask({ ...response.data, _id: null });
-        setAiSubtasksForForm([]);
         setIsFormOpen(true);
         setNlText("");
         toast.success("Task parsed from description! ✨");
@@ -394,12 +369,10 @@ const Dashboard = () => {
                       onDelete={setTaskToDelete}
                       onEdit={(selectedTask) => {
                         setFormTask(selectedTask);
-                        setAiSubtasksForForm([]);
                         setIsFormOpen(true);
                       }}
                       onStatusChange={handleStatusChange}
                       onSummarize={handleAiInsight}
-                      onSubtasks={handleAiSubtasks}
                       summary={insights[task._id]?.summary}
                       task={task}
                       workingAction={workingAction[task._id]}
@@ -534,8 +507,7 @@ const Dashboard = () => {
 
       {/* Task Form Dialog */}
       <TaskForm
-        aiSubtasks={aiSubtasksForForm}
-        key={`${formTask?._id || "new"}-${aiSubtasksForForm.length}`}
+        key={formTask?._id || "new"}
         onClose={handleCloseForm}
         onSubmit={handleSubmitTask}
         open={isFormOpen}

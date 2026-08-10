@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Button,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -12,6 +11,8 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import toast from "react-hot-toast";
+import { getSubtaskBreakdown } from "../services/taskService";
 
 const getInitialFormData = (task) => ({
   title: task?.title || "",
@@ -22,19 +23,15 @@ const getInitialFormData = (task) => ({
   estimatedTime: task?.estimatedTime || "",
   tagsInput: Array.isArray(task?.tags) ? task.tags.join(", ") : "",
   subtasks: Array.isArray(task?.subtasks)
-    ? task.subtasks.map((s) => ({ title: s.title, completed: s.completed }))
+    ? task.subtasks.map((s) => ({ title: s.title, completed: Boolean(s.completed) }))
     : [],
 });
 
-const TaskForm = ({ task, open, onClose, onSubmit, submitting, aiSubtasks }) => {
+const TaskForm = ({ task, open, onClose, onSubmit, submitting }) => {
   const [formData, setFormData] = useState(() => getInitialFormData(task));
   const [newSubtask, setNewSubtask] = useState("");
+  const [generatingAiSubtasks, setGeneratingAiSubtasks] = useState(false);
   const isEditing = Boolean(task?._id);
-
-  // Merge AI-suggested subtasks if provided
-  const subtasksWithAi = aiSubtasks?.length
-    ? [...formData.subtasks, ...aiSubtasks.map((t) => ({ title: t, completed: false }))]
-    : formData.subtasks;
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -59,6 +56,41 @@ const TaskForm = ({ task, open, onClose, onSubmit, submitting, aiSubtasks }) => 
     }
   };
 
+  const handleGenerateAiSubtasks = async () => {
+    if (!formData.title.trim() || !formData.description.trim()) {
+      toast.error("Please enter a title and description first to generate AI subtasks.");
+      return;
+    }
+
+    setGeneratingAiSubtasks(true);
+    try {
+      const response = await getSubtaskBreakdown({
+        title: formData.title,
+        description: formData.description,
+      });
+
+      if (response.subtasks?.length > 0) {
+        const existingTitles = new Set(formData.subtasks.map((s) => s.title.toLowerCase().trim()));
+        const newItems = response.subtasks
+          .filter((t) => !existingTitles.has(t.toLowerCase().trim()))
+          .map((t) => ({ title: t, completed: false }));
+
+        if (newItems.length > 0) {
+          setFormData((d) => ({ ...d, subtasks: [...d.subtasks, ...newItems] }));
+          toast.success(`${newItems.length} AI subtasks generated!`);
+        } else {
+          toast.info("AI generated subtasks that already exist in your list.");
+        }
+      } else {
+        toast.error("Could not generate subtasks for this task.");
+      }
+    } catch (requestError) {
+      toast.error(requestError.response?.data?.message || "AI subtask generation failed.");
+    } finally {
+      setGeneratingAiSubtasks(false);
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     const tags = formData.tagsInput
@@ -75,7 +107,7 @@ const TaskForm = ({ task, open, onClose, onSubmit, submitting, aiSubtasks }) => 
       dueDate: formData.dueDate || null,
       estimatedTime: formData.estimatedTime ? Number(formData.estimatedTime) : null,
       tags,
-      subtasks: subtasksWithAi,
+      subtasks: formData.subtasks,
     });
   };
 
@@ -156,10 +188,24 @@ const TaskForm = ({ task, open, onClose, onSubmit, submitting, aiSubtasks }) => 
 
           {/* Subtasks section */}
           <div>
-            <Typography variant="body2" fontWeight={600} gutterBottom>
-              Subtasks {subtasksWithAi.length > 0 && `(${subtasksWithAi.length})`}
-            </Typography>
-            {subtasksWithAi.map((subtask, index) => (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <Typography variant="body2" fontWeight={600}>
+                Subtasks {formData.subtasks.length > 0 && `(${formData.subtasks.length})`}
+              </Typography>
+              <Button
+                disabled={generatingAiSubtasks || submitting}
+                id="generate-ai-subtasks-btn"
+                onClick={handleGenerateAiSubtasks}
+                size="small"
+                startIcon={generatingAiSubtasks ? <CircularProgress size={12} /> : null}
+                variant="outlined"
+                sx={{ fontSize: "0.75rem" }}
+              >
+                {generatingAiSubtasks ? "Generating..." : "✨ Generate AI Subtasks"}
+              </Button>
+            </div>
+
+            {formData.subtasks.map((subtask, index) => (
               <div key={index} className="subtask-item">
                 <Typography variant="body2" sx={{ flex: 1 }}>• {subtask.title}</Typography>
                 <IconButton
@@ -172,6 +218,7 @@ const TaskForm = ({ task, open, onClose, onSubmit, submitting, aiSubtasks }) => 
                 </IconButton>
               </div>
             ))}
+
             <div className="subtask-add-row">
               <TextField
                 fullWidth
