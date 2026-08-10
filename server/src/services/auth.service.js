@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { OAuth2Client } from "google-auth-library";
 import User from "../models/user.model.js";
 import { sendLoginNotificationEmail } from "./email.service.js";
+import logger from "../utils/logger.js";
 
 const normalizeEmail = (email) => {
   if (!email || typeof email !== "string") return "";
@@ -88,11 +89,14 @@ export const loginUserService = async ({ email, password }) => {
 
     const token = createAuthToken(user._id);
 
+    logger.info(`Login successful for user: ${user.email}`);
+    logger.info(`Login notification email requested for: ${user.email}`);
+
     // Asynchronous non-blocking email notification
     void sendLoginNotificationEmail({
       email: user.email,
       name: user.name,
-      loginMethod: "Email/Password",
+      loginMethod: "Email & Password",
       loginTime: new Date(),
     });
 
@@ -151,6 +155,9 @@ export const googleAuthService = async (idToken) => {
     }
 
     const token = createAuthToken(user._id);
+
+    logger.info(`Login successful for user: ${user.email}`);
+    logger.info(`Login notification email requested for: ${user.email}`);
 
     // Asynchronous non-blocking email notification
     void sendLoginNotificationEmail({

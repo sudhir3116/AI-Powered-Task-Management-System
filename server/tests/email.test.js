@@ -31,7 +31,7 @@ describe("Email Service — Login Notifications", () => {
     const result = await sendLoginNotificationEmail({
       email: "user@example.com",
       name: "Test User",
-      loginMethod: "Email/Password",
+      loginMethod: "Email & Password",
       loginTime: new Date(),
     });
 
@@ -44,7 +44,7 @@ describe("Email Service — Login Notifications", () => {
     const result = await sendLoginNotificationEmail({
       email: "",
       name: "Test User",
-      loginMethod: "Email/Password",
+      loginMethod: "Email & Password",
     });
 
     expect(result.success).toBe(false);
@@ -58,7 +58,7 @@ describe("Email Service — Login Notifications", () => {
     const result = await sendLoginNotificationEmail({
       email: "user@example.com",
       name: "Alex Smith",
-      loginMethod: "Email/Password",
+      loginMethod: "Email & Password",
       loginTime: "2026-08-10T12:00:00Z",
     });
 
@@ -69,7 +69,7 @@ describe("Email Service — Login Notifications", () => {
         from: "TaskFlow AI <onboarding@resend.dev>",
         to: ["user@example.com"],
         subject: "New Login to TaskFlow AI",
-        text: expect.stringContaining("A new login to your account was detected."),
+        text: expect.stringContaining("A new login to your TaskFlow AI account was detected."),
         html: expect.stringContaining("If you did not perform this login, please secure your account immediately."),
       })
     );
@@ -90,7 +90,7 @@ describe("Email Service — Login Notifications", () => {
       expect.objectContaining({
         to: ["googleuser@example.com"],
         subject: "New Login to TaskFlow AI",
-        text: expect.stringContaining("Login Method: Google OAuth"),
+        text: expect.stringContaining("Login method: Google OAuth"),
       })
     );
   });
@@ -102,7 +102,7 @@ describe("Email Service — Login Notifications", () => {
     const result = await sendLoginNotificationEmail({
       email: "erroruser@example.com",
       name: "Error User",
-      loginMethod: "Email/Password",
+      loginMethod: "Email & Password",
     });
 
     expect(result.success).toBe(false);

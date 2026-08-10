@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -14,7 +15,6 @@ import {
   Paper,
   Skeleton,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import toast from "react-hot-toast";
@@ -22,6 +22,7 @@ import toast from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import TaskCard from "../components/TaskCard";
 import TaskForm from "../components/TaskForm";
+import { useAuth } from "../context/AuthContext";
 import {
   createTask,
   deleteTask,
@@ -44,27 +45,26 @@ const initialFilters = {
   order: "desc",
 };
 
-const PriorityBar = ({ label, count, total, color }) => {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-  return (
-    <div className="priority-bar-row">
-      <Typography variant="caption" color="text.secondary" sx={{ minWidth: 48 }}>{label}</Typography>
-      <div className="priority-bar-track">
-        <div className="priority-bar-fill" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, textAlign: "right" }}>{count}</Typography>
-    </div>
-  );
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
 };
 
 const Dashboard = () => {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [filters, setFilters] = useState(initialFilters);
   const [searchInput, setSearchInput] = useState("");
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, totalTasks: 0 });
   const [statistics, setStatistics] = useState({
-    total: 0, pending: 0, inProgress: 0, completed: 0,
-    overdue: 0, completionRate: 0,
+    total: 0,
+    pending: 0,
+    inProgress: 0,
+    completed: 0,
+    overdue: 0,
+    completionRate: 0,
     priorityDistribution: { High: 0, Medium: 0, Low: 0 },
     upcomingDeadlines: [],
   });
@@ -191,9 +191,10 @@ const Dashboard = () => {
   const handleAiInsight = async (task, type) => {
     setWorkingAction((current) => ({ ...current, [task._id]: type }));
     try {
-      const response = type === "summary"
-        ? await getTaskSummary(task)
-        : await getDeadlineSuggestion(task);
+      const response =
+        type === "summary"
+          ? await getTaskSummary(task)
+          : await getDeadlineSuggestion(task);
       const value = type === "summary" ? response.summary : response.estimatedDeadline;
       setInsights((current) => ({
         ...current,
@@ -248,264 +249,287 @@ const Dashboard = () => {
         setAiSubtasksForForm([]);
         setIsFormOpen(true);
         setNlText("");
-        toast.success("Task parsed from your description! ✨");
+        toast.success("Task parsed from description! ✨");
       }
     } catch (requestError) {
-      toast.error(requestError.response?.data?.message || "Could not parse task. Try being more specific.");
+      toast.error(requestError.response?.data?.message || "Could not parse task.");
     } finally {
       setParsingNl(false);
     }
   };
 
-  const statCards = [
-    { label: "Total", value: statistics.total, color: "#4f46e5" },
-    { label: "Pending", value: statistics.pending, color: "#d97706" },
-    { label: "In Progress", value: statistics.inProgress, color: "#0ea5e9" },
-    { label: "Completed", value: statistics.completed, color: "#059669" },
-    { label: "Overdue", value: statistics.overdue, color: "#dc2626" },
-    { label: "Done %", value: `${statistics.completionRate || 0}%`, color: "#7c3aed" },
+  const summaryCards = [
+    { label: "Total Tasks", value: statistics.total, color: "#4f46e5", bg: "rgba(79, 70, 229, 0.06)" },
+    { label: "Completed", value: statistics.completed, color: "#059669", bg: "rgba(5, 150, 105, 0.06)" },
+    { label: "In Progress", value: statistics.inProgress, color: "#0ea5e9", bg: "rgba(14, 165, 233, 0.06)" },
+    { label: "Overdue", value: statistics.overdue, color: "#dc2626", bg: "rgba(220, 38, 38, 0.06)" },
   ];
+
+  const userName = user?.name ? user.name.split(" ")[0] : "User";
 
   return (
     <div className="dashboard-page">
       <Navbar onCreateTask={handleOpenCreate} />
-      <main className="dashboard-content">
 
-        {/* Heading */}
-        <section className="dashboard-heading">
-          <div>
-            <Typography component="h1" variant="h4">My Tasks</Typography>
-            <Typography color="text.secondary" variant="body1">
-              AI-powered task management — prioritize, track, and deliver.
-            </Typography>
-          </div>
-          <Button onClick={handleOpenCreate} variant="contained" id="create-task-btn" size="large">
-            + Create Task
-          </Button>
+      <main className="dashboard-layout">
+        {/* Welcome Header */}
+        <section className="welcome-banner">
+          <Typography component="h1" variant="h5" fontWeight={700}>
+            {getGreeting()}, {userName} 👋
+          </Typography>
+          <Typography color="text.secondary" variant="body2">
+            Here's your productivity overview.
+          </Typography>
         </section>
 
-        {/* Stats */}
-        <section className="stats-grid" aria-label="Task statistics">
-          {statCards.map(({ label, value, color }) => (
-            <Paper className="stat-card" elevation={0} key={label}>
-              <Typography color="text.secondary" variant="caption">{label}</Typography>
-              <Typography component="p" variant="h5" sx={{ color, fontWeight: 700 }}>{value}</Typography>
+        {/* 4-Card Summary Row */}
+        <section className="summary-row" aria-label="Task metrics summary">
+          {summaryCards.map(({ label, value, color, bg }) => (
+            <Paper className="summary-card" elevation={0} key={label} style={{ backgroundColor: bg }}>
+              <Typography color="text.secondary" variant="caption" fontWeight={600}>{label}</Typography>
+              <Typography component="p" variant="h4" sx={{ color, fontWeight: 800 }}>
+                {value}
+              </Typography>
             </Paper>
           ))}
         </section>
 
-        {/* Analytics row: Priority Distribution + Upcoming Deadlines */}
-        <div className="analytics-grid">
-          {/* Priority Distribution */}
-          <Paper className="analytics-card" elevation={0}>
-            <Typography variant="subtitle2" fontWeight={700} gutterBottom>Priority Distribution</Typography>
-            <PriorityBar label="High" count={statistics.priorityDistribution?.High || 0} total={statistics.total} color="#dc2626" />
-            <PriorityBar label="Medium" count={statistics.priorityDistribution?.Medium || 0} total={statistics.total} color="#d97706" />
-            <PriorityBar label="Low" count={statistics.priorityDistribution?.Low || 0} total={statistics.total} color="#059669" />
-          </Paper>
+        {/* Main 2-Column Dashboard Body */}
+        <div className="dashboard-body-grid">
+          {/* LEFT MAIN AREA: My Tasks & Controls */}
+          <div className="main-content-column">
+            {/* Filter & Search Toolbar */}
+            <Paper className="tasks-toolbar-panel" elevation={0}>
+              <div className="toolbar-header">
+                <Typography component="h2" variant="h6" fontWeight={700}>
+                  My Tasks
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {pagination.totalTasks} task{pagination.totalTasks === 1 ? "" : "s"}
+                </Typography>
+              </div>
 
-          {/* Upcoming Deadlines */}
-          <Paper className="analytics-card" elevation={0}>
-            <Typography variant="subtitle2" fontWeight={700} gutterBottom>Upcoming Deadlines (7 days)</Typography>
-            {statistics.upcomingDeadlines?.length > 0 ? (
-              <div className="deadline-list">
-                {statistics.upcomingDeadlines.map((task) => (
-                  <div key={task._id} className="deadline-item">
-                    <Typography variant="body2" className="deadline-title">{task.title}</Typography>
-                    <Typography variant="caption" color="warning.main">
-                      {new Date(task.dueDate).toLocaleDateString()}
-                    </Typography>
+              <Box className="toolbar-controls" component="form" onSubmit={handleSearchSubmit}>
+                <TextField
+                  className="search-field"
+                  id="search-input"
+                  placeholder="Search tasks..."
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  size="small"
+                  value={searchInput}
+                />
+                <TextField
+                  className="filter-select"
+                  id="filter-status"
+                  onChange={(event) => updateFilters({ status: event.target.value, page: 1 })}
+                  select
+                  size="small"
+                  value={filters.status}
+                >
+                  <MenuItem value="">All Statuses</MenuItem>
+                  <MenuItem value="Pending">Pending</MenuItem>
+                  <MenuItem value="In Progress">In Progress</MenuItem>
+                  <MenuItem value="Completed">Completed</MenuItem>
+                </TextField>
+                <TextField
+                  className="filter-select"
+                  id="filter-priority"
+                  onChange={(event) => updateFilters({ priority: event.target.value, page: 1 })}
+                  select
+                  size="small"
+                  value={filters.priority}
+                >
+                  <MenuItem value="">All Priorities</MenuItem>
+                  <MenuItem value="High">High</MenuItem>
+                  <MenuItem value="Medium">Medium</MenuItem>
+                  <MenuItem value="Low">Low</MenuItem>
+                </TextField>
+                <TextField
+                  className="filter-select"
+                  id="filter-sort"
+                  onChange={(event) => updateFilters({ sort: event.target.value, page: 1 })}
+                  select
+                  size="small"
+                  value={filters.sort}
+                >
+                  <MenuItem value="createdAt">Created Date</MenuItem>
+                  <MenuItem value="dueDate">Due Date</MenuItem>
+                  <MenuItem value="priority">Priority</MenuItem>
+                </TextField>
+                <Button id="search-btn" type="submit" variant="contained" size="small">
+                  Search
+                </Button>
+              </Box>
+            </Paper>
+
+            {error && <Alert className="dashboard-alert" severity="error">{error}</Alert>}
+
+            {/* Task Grid / Cards List */}
+            {loading ? (
+              <div className="tasks-grid">
+                {[1, 2, 3, 4].map((item) => (
+                  <Skeleton className="task-skeleton" key={item} variant="rounded" />
+                ))}
+              </div>
+            ) : tasks.length === 0 ? (
+              <Paper className="empty-state" elevation={0}>
+                <div className="empty-state-icon">📋</div>
+                <Typography component="h3" variant="h6" fontWeight={700}>No tasks found</Typography>
+                <Typography color="text.secondary" variant="body2">
+                  {filters.search || filters.status || filters.priority
+                    ? "Try adjusting your search or filters."
+                    : "Get started by creating your first task!"}
+                </Typography>
+                <Button onClick={handleOpenCreate} variant="contained" size="small" id="create-first-task-btn" sx={{ mt: 1 }}>
+                  + Create Task
+                </Button>
+              </Paper>
+            ) : (
+              <>
+                <div className="tasks-grid">
+                  {tasks.map((task) => (
+                    <TaskCard
+                      deadline={insights[task._id]?.deadline}
+                      key={task._id}
+                      onDelete={setTaskToDelete}
+                      onEdit={(selectedTask) => {
+                        setFormTask(selectedTask);
+                        setAiSubtasksForForm([]);
+                        setIsFormOpen(true);
+                      }}
+                      onStatusChange={handleStatusChange}
+                      onSummarize={handleAiInsight}
+                      onSubtasks={handleAiSubtasks}
+                      summary={insights[task._id]?.summary}
+                      task={task}
+                      workingAction={workingAction[task._id]}
+                    />
+                  ))}
+                </div>
+
+                {pagination.totalPages > 1 && (
+                  <div className="pagination-wrap">
+                    <Pagination
+                      count={pagination.totalPages}
+                      onChange={(_, page) => updateFilters({ page })}
+                      page={pagination.page}
+                      shape="rounded"
+                      color="primary"
+                      size="small"
+                    />
                   </div>
-                ))}
-              </div>
-            ) : (
-              <Typography color="text.secondary" variant="body2">No upcoming deadlines in the next 7 days.</Typography>
+                )}
+              </>
             )}
-          </Paper>
-
-          {/* AI Productivity Suggestions */}
-          <Paper className="analytics-card" elevation={0}>
-            <div className="analytics-card-header">
-              <Typography variant="subtitle2" fontWeight={700}>AI Productivity Coach</Typography>
-              <Button
-                disabled={loadingProductivity}
-                onClick={handleLoadProductivity}
-                size="small"
-                startIcon={loadingProductivity ? <CircularProgress size={12} /> : null}
-                variant="outlined"
-              >
-                {productivitySuggestions.length > 0 ? "Refresh" : "Get Tips"}
-              </Button>
-            </div>
-            {productivitySuggestions.length > 0 ? (
-              <ul className="productivity-list">
-                {productivitySuggestions.map((tip, i) => (
-                  <li key={i}><Typography variant="body2">{tip}</Typography></li>
-                ))}
-              </ul>
-            ) : (
-              <Typography color="text.secondary" variant="body2">
-                Click "Get Tips" for personalized AI productivity suggestions based on your task data.
-              </Typography>
-            )}
-          </Paper>
-        </div>
-
-        {/* Natural Language Task Creation */}
-        <Paper className="nl-create-panel" elevation={0}>
-          <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-            ✨ Create Task from Natural Language
-          </Typography>
-          <Typography color="text.secondary" variant="caption" display="block" sx={{ mb: 1.5 }}>
-            Describe your task in plain English — AI will structure it for you.
-          </Typography>
-          <Box component="form" onSubmit={handleNaturalLanguageCreate} className="nl-form">
-            <TextField
-              fullWidth
-              id="nl-input"
-              label="e.g. Write a blog post about AI productivity by next Friday, high priority"
-              onChange={(e) => setNlText(e.target.value)}
-              size="small"
-              value={nlText}
-            />
-            <Button
-              disabled={parsingNl || !nlText.trim()}
-              id="nl-submit-btn"
-              startIcon={parsingNl ? <CircularProgress size={14} /> : null}
-              type="submit"
-              variant="contained"
-              sx={{ whiteSpace: "nowrap" }}
-            >
-              {parsingNl ? "Parsing..." : "Parse & Create"}
-            </Button>
-          </Box>
-        </Paper>
-
-        {/* Filters */}
-        <Paper className="filters-panel" elevation={0}>
-          <Box className="filters-grid" component="form" onSubmit={handleSearchSubmit}>
-            <TextField
-              id="search-input"
-              label="Search tasks"
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Title or description"
-              size="small"
-              value={searchInput}
-            />
-            <TextField
-              id="filter-status"
-              label="Status"
-              onChange={(event) => updateFilters({ status: event.target.value, page: 1 })}
-              select
-              size="small"
-              value={filters.status}
-            >
-              <MenuItem value="">All statuses</MenuItem>
-              <MenuItem value="Pending">Pending</MenuItem>
-              <MenuItem value="In Progress">In Progress</MenuItem>
-              <MenuItem value="Completed">Completed</MenuItem>
-            </TextField>
-            <TextField
-              id="filter-priority"
-              label="Priority"
-              onChange={(event) => updateFilters({ priority: event.target.value, page: 1 })}
-              select
-              size="small"
-              value={filters.priority}
-            >
-              <MenuItem value="">All priorities</MenuItem>
-              <MenuItem value="High">High</MenuItem>
-              <MenuItem value="Medium">Medium</MenuItem>
-              <MenuItem value="Low">Low</MenuItem>
-            </TextField>
-            <TextField
-              id="filter-sort"
-              label="Sort by"
-              onChange={(event) => updateFilters({ sort: event.target.value, page: 1 })}
-              select
-              size="small"
-              value={filters.sort}
-            >
-              <MenuItem value="createdAt">Created date</MenuItem>
-              <MenuItem value="dueDate">Due date</MenuItem>
-              <MenuItem value="updatedAt">Last updated</MenuItem>
-              <MenuItem value="title">Title</MenuItem>
-              <MenuItem value="priority">Priority</MenuItem>
-            </TextField>
-            <TextField
-              id="filter-order"
-              label="Order"
-              onChange={(event) => updateFilters({ order: event.target.value, page: 1 })}
-              select
-              size="small"
-              value={filters.order}
-            >
-              <MenuItem value="desc">Descending</MenuItem>
-              <MenuItem value="asc">Ascending</MenuItem>
-            </TextField>
-            <Button id="search-btn" type="submit" variant="outlined" size="small">Search</Button>
-          </Box>
-        </Paper>
-
-        {error && <Alert className="dashboard-alert" severity="error">{error}</Alert>}
-
-        {loading ? (
-          <div className="tasks-grid">
-            {[1, 2, 3, 4, 5, 6].map((item) => (
-              <Skeleton className="task-skeleton" key={item} variant="rounded" />
-            ))}
           </div>
-        ) : tasks.length === 0 ? (
-          <Paper className="empty-state" elevation={0}>
-            <div className="empty-state-icon">📋</div>
-            <Typography component="h2" variant="h5">No tasks found</Typography>
-            <Typography color="text.secondary" variant="body1">
-              {filters.search || filters.status || filters.priority
-                ? "Try adjusting your search or filters."
-                : "Create your first task to get started!"}
-            </Typography>
-            <Button onClick={handleOpenCreate} variant="contained" size="large" id="create-first-task-btn">
-              Create a task
-            </Button>
-          </Paper>
-        ) : (
-          <>
-            <Typography className="task-count" color="text.secondary" variant="body2">
-              {pagination.totalTasks} task{pagination.totalTasks === 1 ? "" : "s"} found
-            </Typography>
-            <div className="tasks-grid">
-              {tasks.map((task) => (
-                <TaskCard
-                  deadline={insights[task._id]?.deadline}
-                  key={task._id}
-                  onDelete={setTaskToDelete}
-                  onEdit={(selectedTask) => {
-                    setFormTask(selectedTask);
-                    setAiSubtasksForForm([]);
-                    setIsFormOpen(true);
-                  }}
-                  onStatusChange={handleStatusChange}
-                  onSummarize={handleAiInsight}
-                  onSubtasks={handleAiSubtasks}
-                  summary={insights[task._id]?.summary}
-                  task={task}
-                  workingAction={workingAction[task._id]}
+
+          {/* RIGHT SECONDARY COLUMN: Widgets Sidebar */}
+          <aside className="sidebar-column">
+            {/* Widget 1: Create with AI */}
+            <Paper className="sidebar-card nl-card" elevation={0}>
+              <Typography variant="subtitle2" fontWeight={700} gutterBottom className="card-heading">
+                ✨ Create Task with AI
+              </Typography>
+              <Typography color="text.secondary" variant="caption" display="block" sx={{ mb: 1.5 }}>
+                Describe a task in plain English (e.g. "Prepare deck by Friday, high priority").
+              </Typography>
+              <Box component="form" onSubmit={handleNaturalLanguageCreate} className="nl-form-compact">
+                <TextField
+                  fullWidth
+                  id="nl-input"
+                  multiline
+                  rows={2}
+                  placeholder="Task details & deadline..."
+                  onChange={(e) => setNlText(e.target.value)}
+                  size="small"
+                  value={nlText}
                 />
-              ))}
-            </div>
-            {pagination.totalPages > 1 && (
-              <div className="pagination-wrap">
-                <Pagination
-                  count={pagination.totalPages}
-                  onChange={(_, page) => updateFilters({ page })}
-                  page={pagination.page}
-                  shape="rounded"
-                  color="primary"
-                />
+                <Button
+                  disabled={parsingNl || !nlText.trim()}
+                  fullWidth
+                  id="nl-submit-btn"
+                  size="small"
+                  startIcon={parsingNl ? <CircularProgress size={14} /> : null}
+                  type="submit"
+                  variant="contained"
+                  sx={{ mt: 1 }}
+                >
+                  {parsingNl ? "Parsing..." : "Parse & Create"}
+                </Button>
+              </Box>
+            </Paper>
+
+            {/* Widget 2: Upcoming Deadlines & Priority Focus */}
+            <Paper className="sidebar-card" elevation={0}>
+              <Typography variant="subtitle2" fontWeight={700} gutterBottom className="card-heading">
+                📅 Upcoming Deadlines
+              </Typography>
+              {statistics.upcomingDeadlines?.length > 0 ? (
+                <div className="deadline-list">
+                  {statistics.upcomingDeadlines.map((task) => (
+                    <div key={task._id} className="deadline-item">
+                      <div className="deadline-item-info">
+                        <Typography variant="body2" fontWeight={600} className="deadline-title">
+                          {task.title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Due {new Date(task.dueDate).toLocaleDateString()}
+                        </Typography>
+                      </div>
+                      <Chip label={task.priority} size="small" color={task.priority === "High" ? "error" : "warning"} variant="outlined" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <Typography color="text.secondary" variant="caption" display="block">
+                  No upcoming deadlines in the next 7 days.
+                </Typography>
+              )}
+            </Paper>
+
+            {/* Widget 3: AI Productivity Insights */}
+            <Paper className="sidebar-card" elevation={0}>
+              <div className="sidebar-card-header">
+                <Typography variant="subtitle2" fontWeight={700} className="card-heading">
+                  💡 AI Productivity Coach
+                </Typography>
+                <Button
+                  disabled={loadingProductivity}
+                  onClick={handleLoadProductivity}
+                  size="small"
+                  startIcon={loadingProductivity ? <CircularProgress size={12} /> : null}
+                  variant="text"
+                  sx={{ fontSize: "0.75rem", minWidth: "auto", p: 0.5 }}
+                >
+                  {productivitySuggestions.length > 0 ? "Refresh" : "Get Tips"}
+                </Button>
               </div>
-            )}
-          </>
-        )}
+
+              {/* Progress Bar */}
+              <div className="completion-widget">
+                <div className="completion-label-row">
+                  <Typography variant="caption" color="text.secondary" fontWeight={600}>Completion Rate</Typography>
+                  <Typography variant="caption" fontWeight={700} color="primary">{statistics.completionRate || 0}%</Typography>
+                </div>
+                <div className="completion-bar-track">
+                  <div className="completion-bar-fill" style={{ width: `${statistics.completionRate || 0}%` }} />
+                </div>
+              </div>
+
+              {productivitySuggestions.length > 0 ? (
+                <ul className="productivity-list">
+                  {productivitySuggestions.map((tip, i) => (
+                    <li key={i}><Typography variant="caption">{tip}</Typography></li>
+                  ))}
+                </ul>
+              ) : (
+                <Typography color="text.secondary" variant="caption" display="block" sx={{ mt: 1 }}>
+                  Click "Get Tips" to generate personalized productivity tips based on your active workload.
+                </Typography>
+              )}
+            </Paper>
+          </aside>
+        </div>
       </main>
 
       {/* Task Form Dialog */}
