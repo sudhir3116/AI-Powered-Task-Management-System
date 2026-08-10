@@ -14,6 +14,18 @@ export const login = async (userData) => {
   return response.data;
 };
 
+// Google OAuth Login
+export const googleLogin = async (credential) => {
+  const response = await api.post("/auth/google", { credential });
+  return response.data;
+};
+
+// Get current user profile
+export const getProfile = async () => {
+  const response = await api.get("/auth/me");
+  return response.data;
+};
+
 // Logout User
 export const logout = () => {
   sessionStorage.removeItem("token");

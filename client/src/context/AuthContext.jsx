@@ -55,6 +55,21 @@ export const AuthProvider = ({ children }) => {
     return response;
   };
 
+  const googleLogin = async (credential) => {
+    const response = await authService.googleLogin(credential);
+    const session = response.data;
+
+    if (!session?.token || !session?.user) {
+      throw new Error("Invalid Google login response from server");
+    }
+
+    sessionStorage.setItem("token", session.token);
+    sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(session.user));
+    setUser(session.user);
+
+    return response;
+  };
+
   const logout = () => {
     authService.logout();
     setUser(null);
@@ -66,6 +81,7 @@ export const AuthProvider = ({ children }) => {
       loading,
       register,
       login,
+      googleLogin,
       logout,
       isAuthenticated: Boolean(user),
     }),

@@ -60,20 +60,68 @@ export const getAllTasksService = async (
 };
 
 export const getTaskStatisticsService = async (userId) => {
-    const [total, pending, inProgress, completed] = await Promise.all([
+    const now = new Date();
+
+    const [total, pending, inProgress, completed, overdue, priorityDist] = await Promise.all([
         Task.countDocuments({ user: userId }),
         Task.countDocuments({ user: userId, status: "Pending" }),
         Task.countDocuments({ user: userId, status: "In Progress" }),
         Task.countDocuments({ user: userId, status: "Completed" }),
+        // Overdue = Pending or In Progress with dueDate in the past
+        Task.countDocuments({
+            user: userId,
+            status: { $in: ["Pending", "In Progress"] },
+            dueDate: { $lt: now, $ne: null },
+        }),
+        // Priority distribution
+        Task.aggregate([
+            { $match: { user: userId } },
+            { $group: { _id: "$priority", count: { $sum: 1 } } },
+        ]),
     ]);
 
-    return { total, pending, inProgress, completed };
+    // Upcoming deadlines (tasks due in next 7 days, not completed)
+    const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const upcomingDeadlines = await Task.find({
+        user: userId,
+        status: { $ne: "Completed" },
+        dueDate: { $gte: now, $lte: sevenDaysFromNow },
+    })
+        .sort({ dueDate: 1 })
+        .limit(5)
+        .select("title dueDate priority status");
+
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    const priorityDistribution = { High: 0, Medium: 0, Low: 0 };
+    priorityDist.forEach(({ _id, count }) => {
+        if (_id in priorityDistribution) priorityDistribution[_id] = count;
+    });
+
+    return {
+        total,
+        pending,
+        inProgress,
+        completed,
+        overdue,
+        completionRate,
+        priorityDistribution,
+        upcomingDeadlines,
+    };
 };
 
 export const updateTaskService = async (id, userId, taskData) => {
+    // Auto-stamp completedAt when marking as Completed
+    if (taskData.status === "Completed") {
+        taskData.completedAt = taskData.completedAt || new Date();
+    } else if (taskData.status && taskData.status !== "Completed") {
+        // Clear completedAt if un-completing
+        taskData.completedAt = null;
+    }
+
     return await Task.findOneAndUpdate({ _id: id, user: userId }, taskData, {
         returnDocument: "after",
-        runValidators: true
+        runValidators: true,
     });
 };
 

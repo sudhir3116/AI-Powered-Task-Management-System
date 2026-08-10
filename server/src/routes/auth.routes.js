@@ -1,9 +1,12 @@
 import express from "express";
 import { check } from "express-validator";
 import validateRequest from "../middleware/validation.middleware.js";
+import authMiddleware from "../middleware/auth.middleware.js";
 import {
     registerUser,
-    loginUser
+    loginUser,
+    googleAuth,
+    getProfile,
 } from "../controllers/auth.controller.js";
 
 const router = express.Router();
@@ -20,16 +23,21 @@ const router = express.Router();
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [name, email, password]
  *             properties:
  *               name:
  *                 type: string
  *               email:
  *                 type: string
+ *                 format: email
  *               password:
  *                 type: string
+ *                 minLength: 6
  *     responses:
  *       201:
  *         description: User registered successfully
+ *       400:
+ *         description: Validation error or user already exists
  */
 router.post(
     "/register",
@@ -54,14 +62,18 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [email, password]
  *             properties:
  *               email:
  *                 type: string
+ *                 format: email
  *               password:
  *                 type: string
  *     responses:
  *       200:
  *         description: Login successful
+ *       401:
+ *         description: Invalid credentials
  */
 router.post(
     "/login",
@@ -72,5 +84,53 @@ router.post(
     validateRequest,
     loginUser
 );
+
+/**
+ * @swagger
+ * /api/auth/google:
+ *   post:
+ *     summary: Authenticate with Google OAuth
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [credential]
+ *             properties:
+ *               credential:
+ *                 type: string
+ *                 description: Google ID token from Google Identity Services
+ *     responses:
+ *       200:
+ *         description: Google login successful
+ *       401:
+ *         description: Invalid Google credential
+ *       503:
+ *         description: Google OAuth not configured on server
+ */
+router.post(
+    "/google",
+    [check("credential").notEmpty().withMessage("Google credential is required")],
+    validateRequest,
+    googleAuth
+);
+
+/**
+ * @swagger
+ * /api/auth/me:
+ *   get:
+ *     summary: Get current authenticated user profile
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User profile
+ *       401:
+ *         description: Unauthorized
+ */
+router.get("/me", authMiddleware, getProfile);
 
 export default router;

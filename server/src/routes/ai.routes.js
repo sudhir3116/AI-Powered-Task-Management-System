@@ -1,8 +1,23 @@
 import express from "express";
-import { prioritizeTask, summarizeTask, deadlineSuggestion } from "../controllers/ai.controller.js";
+import { check } from "express-validator";
+import {
+  prioritizeTask,
+  summarizeTask,
+  deadlineSuggestion,
+  subtaskBreakdown,
+  productivitySuggestions,
+  naturalLanguageCreate,
+} from "../controllers/ai.controller.js";
 import authMiddleware from "../middleware/auth.middleware.js";
+import validateRequest from "../middleware/validation.middleware.js";
 
 const router = express.Router();
+
+const requireTitleAndDescription = [
+  check("title").notEmpty().withMessage("Title is required"),
+  check("description").notEmpty().withMessage("Description is required"),
+  validateRequest,
+];
 
 /**
  * @swagger
@@ -18,6 +33,7 @@ const router = express.Router();
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [title, description]
  *             properties:
  *               title:
  *                 type: string
@@ -25,9 +41,9 @@ const router = express.Router();
  *                 type: string
  *     responses:
  *       200:
- *         description: AI priority response
+ *         description: Returns High, Medium, or Low priority
  */
-router.post("/prioritize", authMiddleware, prioritizeTask);
+router.post("/prioritize", authMiddleware, requireTitleAndDescription, prioritizeTask);
 
 /**
  * @swagger
@@ -43,6 +59,7 @@ router.post("/prioritize", authMiddleware, prioritizeTask);
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [title, description]
  *             properties:
  *               title:
  *                 type: string
@@ -50,15 +67,15 @@ router.post("/prioritize", authMiddleware, prioritizeTask);
  *                 type: string
  *     responses:
  *       200:
- *         description: AI summary response
+ *         description: AI-generated 1-2 sentence summary
  */
-router.post("/summarize", authMiddleware, summarizeTask);
+router.post("/summarize", authMiddleware, requireTitleAndDescription, summarizeTask);
 
 /**
  * @swagger
  * /api/ai/deadline:
  *   post:
- *     summary: Get AI-generated deadline suggestion
+ *     summary: Get AI-suggested deadline for a task
  *     tags: [AI]
  *     security:
  *       - bearerAuth: []
@@ -68,6 +85,7 @@ router.post("/summarize", authMiddleware, summarizeTask);
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [title, description]
  *             properties:
  *               title:
  *                 type: string
@@ -75,8 +93,80 @@ router.post("/summarize", authMiddleware, summarizeTask);
  *                 type: string
  *     responses:
  *       200:
- *         description: AI deadline response
+ *         description: Suggested deadline (Today, Tomorrow, Within 3 days, Within a week)
  */
-router.post("/deadline", authMiddleware, deadlineSuggestion);
+router.post("/deadline", authMiddleware, requireTitleAndDescription, deadlineSuggestion);
+
+/**
+ * @swagger
+ * /api/ai/subtasks:
+ *   post:
+ *     summary: AI-generated subtask breakdown for a task
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, description]
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Array of 3-7 actionable subtask strings
+ */
+router.post("/subtasks", authMiddleware, requireTitleAndDescription, subtaskBreakdown);
+
+/**
+ * @swagger
+ * /api/ai/productivity:
+ *   post:
+ *     summary: Get AI productivity suggestions based on task data
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Personalized productivity suggestions based on the user's task statistics
+ */
+router.post("/productivity", authMiddleware, productivitySuggestions);
+
+/**
+ * @swagger
+ * /api/ai/natural-language:
+ *   post:
+ *     summary: Parse natural language text into a structured task
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [text]
+ *             properties:
+ *               text:
+ *                 type: string
+ *                 description: Natural language task description
+ *     responses:
+ *       200:
+ *         description: Structured task with title, description, priority, dueDate
+ *       422:
+ *         description: Could not parse the provided text
+ */
+router.post(
+  "/natural-language",
+  authMiddleware,
+  [check("text").notEmpty().withMessage("Text is required"), validateRequest],
+  naturalLanguageCreate
+);
 
 export default router;
