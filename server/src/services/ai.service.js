@@ -1,6 +1,9 @@
 import groq from "../ai/groq.js";
 
 const completionText = async (prompt, temperature = 0) => {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error("GROQ_API_KEY is not configured");
+  }
   const completion = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
     messages: [{ role: "user", content: prompt }],
@@ -208,3 +211,178 @@ Rules:
     return null;
   }
 };
+
+export const generateTasksFromNote = async (title, content) => {
+  const prompt = `
+You are an AI assistant that analyzes study notes/documents and proposes actionable tasks and subtasks.
+
+Note Title: ${title}
+Note Content: ${content}
+
+Rules:
+- Return ONLY a valid JSON object with fields: title, description, priority, subtasks.
+- title: concise task title derived from the note.
+- description: clear summary of what needs to be executed based on the note.
+- priority: "High", "Medium", or "Low".
+- subtasks: JSON array of 3 to 5 actionable subtasks extracted from the note topics.
+- No markdown, no code fences.
+`;
+
+  try {
+    const output = await completionText(prompt, 0.3);
+    const match = output.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+
+    const parsed = JSON.parse(match[0]);
+    return {
+      title: String(parsed.title || title).trim().slice(0, 120),
+      description: String(parsed.description || content).trim().slice(0, 500),
+      priority: ["High", "Medium", "Low"].includes(parsed.priority) ? parsed.priority : "Medium",
+      subtasks: Array.isArray(parsed.subtasks)
+        ? parsed.subtasks
+            .filter((item) => typeof item === "string" && item.trim().length > 0)
+            .slice(0, 5)
+            .map((item) => item.trim().slice(0, 200))
+        : [],
+    };
+  } catch {
+    return {
+      title: `Study & execute: ${title}`,
+      description: content.slice(0, 300),
+      priority: "Medium",
+      subtasks: ["Review note topics", "Practice key concepts", "Solve practice problems"],
+    };
+  }
+};
+
+export const generateNoteSummary = async (title, content) => {
+  const prompt = `
+You are an expert AI knowledge manager.
+
+Note Title: ${title}
+Note Content:
+${content}
+
+Rules:
+- Provide a clear, executive-level summary of the document.
+- Limit to 2 to 4 sentences.
+- Focus on the core message and purpose.
+`;
+  try {
+    const text = await completionText(prompt, 0.3);
+    return text || `Summary for "${title}": Covers core concepts and key notes.`;
+  } catch {
+    return `Summary for "${title}": Covers core concepts and key notes.`;
+  }
+};
+
+export const explainNoteContent = async (title, content) => {
+  const prompt = `
+You are an AI educational mentor.
+
+Note Title: ${title}
+Note Content:
+${content}
+
+Rules:
+- Explain the key ideas in plain, simple, easy-to-understand language.
+- Structure your response into 3 sections: 
+  1. What this document is about
+  2. Key concepts explained simply
+  3. Real-world application / Context
+`;
+  try {
+    const text = await completionText(prompt, 0.4);
+    return text || `Explanation for ${title}:\n\n- Overview: This document covers key topics.\n- Core concepts: Essential principles for study and practice.`;
+  } catch {
+    return `Explanation for ${title}:\n\n- Overview: This document covers key topics.\n- Core concepts: Essential principles for study and practice.`;
+  }
+};
+
+export const generateNoteKeyPoints = async (title, content) => {
+  const prompt = `
+You are an AI note summarizer.
+
+Note Title: ${title}
+Note Content:
+${content}
+
+Rules:
+- Extract 4 to 6 key takeaways/bullet points from this content.
+- Return ONLY a valid JSON array of strings.
+- Example: ["Key point 1", "Key point 2"]
+`;
+  try {
+    const output = await completionText(prompt, 0.3);
+    const match = output.match(/\[[\s\S]*\]/);
+    if (!match) return ["Review main topics in note", "Identify key terms and formulas", "Apply concepts to practice problems"];
+    const parsed = JSON.parse(match[0]);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item).trim()).slice(0, 6) : [];
+  } catch {
+    return ["Review main topics in note", "Identify key terms and formulas", "Apply concepts to practice problems"];
+  }
+};
+
+export const generateNoteQuiz = async (title, content) => {
+  const prompt = `
+You are an AI tutor generating a study quiz based on note content.
+
+Note Title: ${title}
+Note Content:
+${content}
+
+Rules:
+- Return ONLY a valid JSON array of 3 multiple choice questions.
+- Format per item: { "question": "...", "options": ["A", "B", "C", "D"], "answer": 0, "explanation": "..." } (answer index 0-3).
+- No markdown, no extra text.
+`;
+  try {
+    const output = await completionText(prompt, 0.3);
+    const match = output.match(/\[[\s\S]*\]/);
+    if (!match) {
+      return [
+        {
+          question: `What is the primary topic of "${title}"?`,
+          options: ["Core concepts outlined in document", "Secondary reference material", "Unrelated topics", "General overview"],
+          answer: 0,
+          explanation: "The document focuses on the primary concepts stated in its title and content.",
+        },
+      ];
+    }
+    const parsed = JSON.parse(match[0]);
+    return Array.isArray(parsed) ? parsed.slice(0, 3) : [];
+  } catch {
+    return [
+      {
+        question: `What is the primary topic of "${title}"?`,
+        options: ["Core concepts outlined in document", "Secondary reference material", "Unrelated topics", "General overview"],
+        answer: 0,
+        explanation: "The document focuses on the primary concepts stated in its title and content.",
+      },
+    ];
+  }
+};
+
+export const generateNoteStudyChecklist = async (title, content) => {
+  const prompt = `
+You are an AI study plan coach.
+
+Note Title: ${title}
+Note Content:
+${content}
+
+Rules:
+- Return ONLY a valid JSON array of 4 to 6 actionable study checklist items.
+- Example: ["Read section 1 thoroughly", "Solve practice problem 1", "Create flashcards for formulas"]
+`;
+  try {
+    const output = await completionText(prompt, 0.3);
+    const match = output.match(/\[[\s\S]*\]/);
+    if (!match) return ["Review document outline", "Highlight key terms", "Complete study exercises"];
+    const parsed = JSON.parse(match[0]);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item).trim()).slice(0, 6) : [];
+  } catch {
+    return ["Review document outline", "Highlight key terms", "Complete study exercises"];
+  }
+};
+

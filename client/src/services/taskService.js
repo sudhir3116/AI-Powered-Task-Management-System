@@ -54,6 +54,36 @@ export const getProductivitySuggestions = async () => {
   return response.data;
 };
 
+// Get single task by ID
+export const getTaskById = async (id) => {
+  const response = await api.get(`/tasks/${id}`);
+  return response.data;
+};
+
+// Get task comments
+export const getTaskComments = async (taskId) => {
+  const response = await api.get(`/tasks/${taskId}/comments`);
+  return response.data;
+};
+
+// Create comment
+export const createComment = async (taskId, content) => {
+  const response = await api.post(`/tasks/${taskId}/comments`, { content });
+  return response.data;
+};
+
+// Delete comment
+export const deleteComment = async (taskId, commentId) => {
+  const response = await api.delete(`/tasks/${taskId}/comments/${commentId}`);
+  return response.data;
+};
+
+// Get task activity timeline
+export const getTaskActivity = async (taskId) => {
+  const response = await api.get(`/tasks/${taskId}/activity`);
+  return response.data;
+};
+
 // AI: Parse natural language into task
 export const parseNaturalLanguage = async (text) => {
   const response = await api.post("/ai/natural-language", { text });

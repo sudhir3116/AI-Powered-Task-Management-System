@@ -75,6 +75,11 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const updateUser = (updatedUser) => {
+    sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+    setUser(updatedUser);
+  };
+
   const value = useMemo(
     () => ({
       user,
@@ -83,6 +88,7 @@ export const AuthProvider = ({ children }) => {
       login,
       googleLogin,
       logout,
+      updateUser,
       isAuthenticated: Boolean(user),
     }),
     [user, loading]

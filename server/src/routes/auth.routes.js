@@ -7,6 +7,10 @@ import {
     loginUser,
     googleAuth,
     getProfile,
+    updateProfile,
+    updatePassword,
+    forgotPassword,
+    resetPassword,
 } from "../controllers/auth.controller.js";
 
 const router = express.Router();
@@ -132,5 +136,38 @@ router.post(
  *         description: Unauthorized
  */
 router.get("/me", authMiddleware, getProfile);
+
+router.patch(
+    "/profile",
+    authMiddleware,
+    [check("name").optional().trim().notEmpty().withMessage("Name cannot be empty")],
+    validateRequest,
+    updateProfile
+);
+
+router.patch(
+    "/password",
+    authMiddleware,
+    [
+        check("currentPassword").notEmpty().withMessage("Current password is required"),
+        check("newPassword").isLength({ min: 6 }).withMessage("New password must be at least 6 characters"),
+    ],
+    validateRequest,
+    updatePassword
+);
+
+router.post(
+    "/forgot-password",
+    [check("email").isEmail().withMessage("Valid email address is required")],
+    validateRequest,
+    forgotPassword
+);
+
+router.post(
+    "/reset-password/:token",
+    [check("newPassword").isLength({ min: 6 }).withMessage("New password must be at least 6 characters")],
+    validateRequest,
+    resetPassword
+);
 
 export default router;

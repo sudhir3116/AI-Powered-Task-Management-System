@@ -7,9 +7,13 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 
 import "./index.css";
 import App from "./App.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
+import { WorkspaceProvider } from "./context/WorkspaceContext.jsx";
+import { SocketProvider } from "./context/SocketContext.jsx";
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_ID =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID || "413884858449-v656rt6k3froc52kg6v5jsa56lrij5fu.apps.googleusercontent.com";
 
 const theme = createTheme({
   palette: {
@@ -75,27 +79,33 @@ const theme = createTheme({
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <BrowserRouter>
-          <AuthProvider>
-            <Toaster
-              position="top-right"
-              toastOptions={{
-                duration: 4000,
-                style: {
-                  fontFamily: "Inter, sans-serif",
-                  fontWeight: 500,
-                  borderRadius: "10px",
-                  border: "1px solid #e2e8f0",
-                },
-              }}
-            />
-            <App />
-          </AuthProvider>
-        </BrowserRouter>
-      </ThemeProvider>
-    </GoogleOAuthProvider>
+    <ErrorBoundary>
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <BrowserRouter>
+            <AuthProvider>
+              <WorkspaceProvider>
+                <SocketProvider>
+                  <Toaster
+                    position="top-right"
+                    toastOptions={{
+                      duration: 4000,
+                      style: {
+                        fontFamily: "Inter, sans-serif",
+                        fontWeight: 500,
+                        borderRadius: "10px",
+                        border: "1px solid #e2e8f0",
+                      },
+                    }}
+                  />
+                  <App />
+                </SocketProvider>
+              </WorkspaceProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </ThemeProvider>
+      </GoogleOAuthProvider>
+    </ErrorBoundary>
   </StrictMode>
 );

@@ -25,7 +25,8 @@ describe("Email Service — Login Notifications", () => {
     process.env = originalEnv;
   });
 
-  it("skips sending email gracefully when EMAIL_API_KEY is not configured", async () => {
+  it("skips sending email gracefully when RESEND_API_KEY is not configured", async () => {
+    delete process.env.RESEND_API_KEY;
     delete process.env.EMAIL_API_KEY;
 
     const result = await sendLoginNotificationEmail({
@@ -37,7 +38,7 @@ describe("Email Service — Login Notifications", () => {
 
     expect(result.success).toBe(false);
     expect(result.skipped).toBe(true);
-    expect(result.reason).toContain("EMAIL_API_KEY missing");
+    expect(result.reason).toContain("RESEND_API_KEY missing");
   });
 
   it("handles missing email parameter gracefully", async () => {
@@ -51,8 +52,8 @@ describe("Email Service — Login Notifications", () => {
     expect(result.reason).toContain("Missing recipient email");
   });
 
-  it("sends login notification email when EMAIL_API_KEY is provided", async () => {
-    process.env.EMAIL_API_KEY = "re_test_key_12345";
+  it("sends login notification email when RESEND_API_KEY is provided", async () => {
+    process.env.RESEND_API_KEY = "re_test_key_12345";
     process.env.EMAIL_FROM = "TaskFlow AI <onboarding@resend.dev>";
 
     const result = await sendLoginNotificationEmail({
@@ -76,7 +77,7 @@ describe("Email Service — Login Notifications", () => {
   });
 
   it("sends Google OAuth login notification email correctly", async () => {
-    process.env.EMAIL_API_KEY = "re_test_key_12345";
+    process.env.RESEND_API_KEY = "re_test_key_12345";
 
     const result = await sendLoginNotificationEmail({
       email: "googleuser@example.com",
@@ -96,7 +97,7 @@ describe("Email Service — Login Notifications", () => {
   });
 
   it("logs error and handles failure gracefully when Resend API throws error", async () => {
-    process.env.EMAIL_API_KEY = "re_test_key_12345";
+    process.env.RESEND_API_KEY = "re_test_key_12345";
     mockSend.mockRejectedValueOnce(new Error("Resend rate limit exceeded"));
 
     const result = await sendLoginNotificationEmail({

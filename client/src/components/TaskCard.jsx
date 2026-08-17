@@ -1,4 +1,7 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
+  Avatar,
   Box,
   Button,
   Card,
@@ -6,34 +9,35 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  IconButton,
+  Menu,
   MenuItem,
-  TextField,
   Typography,
 } from "@mui/material";
 
-const getPriorityColor = (priority) => {
+const getPriorityChipProps = (priority) => {
   switch (priority) {
     case "High":
-      return "error";
+      return { label: "🔥 High", color: "error" };
     case "Medium":
-      return "warning";
+      return { label: "⚡ Medium", color: "warning" };
     case "Low":
-      return "success";
+      return { label: "🟢 Low", color: "success" };
     default:
-      return "default";
+      return { label: priority || "Medium", color: "default" };
   }
 };
 
-const getStatusColor = (status) => {
+const getStatusChipProps = (status) => {
   switch (status) {
     case "Completed":
-      return "success";
+      return { label: "✓ Completed", color: "success" };
     case "In Progress":
-      return "info";
+      return { label: "⏳ In Progress", color: "info" };
     case "Pending":
-      return "warning";
+      return { label: "⏹ Pending", color: "warning" };
     default:
-      return "default";
+      return { label: status || "Pending", color: "default" };
   }
 };
 
@@ -46,6 +50,8 @@ const TaskCard = ({ task, onEdit, onDelete, onStatusChange, onSummarize, summary
   const isWorking = Boolean(workingAction);
   const overdue = isOverdue(task);
 
+  const [statusMenuAnchor, setStatusMenuAnchor] = useState(null);
+
   // Subtask completion calculation
   const completedSubtasks = Array.isArray(task.subtasks)
     ? task.subtasks.filter((s) => s.completed).length
@@ -53,20 +59,64 @@ const TaskCard = ({ task, onEdit, onDelete, onStatusChange, onSummarize, summary
   const totalSubtasks = Array.isArray(task.subtasks) ? task.subtasks.length : 0;
   const subtaskPct = totalSubtasks > 0 ? Math.round((completedSubtasks / totalSubtasks) * 100) : 0;
 
+  const priorityProps = getPriorityChipProps(task.priority);
+  const statusProps = getStatusChipProps(task.status);
+
+  const handleStatusMenuClick = (e) => {
+    e.stopPropagation();
+    setStatusMenuAnchor(e.currentTarget);
+  };
+
+  const handleStatusSelect = (newStatus) => {
+    setStatusMenuAnchor(null);
+    if (newStatus && newStatus !== task.status) {
+      onStatusChange(task, newStatus);
+    }
+  };
+
   return (
     <Card className={`task-card ${overdue ? "task-card--overdue" : ""}`} elevation={0}>
       <CardContent className="task-card-content">
+        {/* Header: Title & Badges */}
         <div className="task-card-header">
-          <Typography component="h3" variant="h6" className="task-title">
+          <Typography
+            component={Link}
+            to={`/tasks/${task._id}`}
+            variant="h6"
+            className="task-title"
+            sx={{
+              textDecoration: "none",
+              color: "text.primary",
+              fontWeight: 700,
+              fontSize: "0.975rem",
+              lineHeight: 1.3,
+              "&:hover": { color: "primary.main" },
+            }}
+          >
             {task.title}
           </Typography>
           <div className="task-header-chips">
-            {overdue && <Chip label="OVERDUE" size="small" color="error" sx={{ fontWeight: 700, fontSize: "0.65rem" }} />}
-            <Chip label={task.priority} size="small" color={getPriorityColor(task.priority)} />
-            <Chip label={task.status} size="small" color={getStatusColor(task.status)} variant="outlined" />
+            {overdue && (
+              <Chip label="⚠️ OVERDUE" size="small" color="error" sx={{ fontWeight: 800, fontSize: "0.625rem", height: 20 }} />
+            )}
+            <Chip
+              label={priorityProps.label}
+              size="small"
+              color={priorityProps.color}
+              sx={{ height: 20, fontSize: "0.65rem", fontWeight: 700 }}
+            />
+            <Chip
+              label={statusProps.label}
+              size="small"
+              color={statusProps.color}
+              variant="outlined"
+              onClick={handleStatusMenuClick}
+              sx={{ height: 20, fontSize: "0.65rem", fontWeight: 700, cursor: "pointer" }}
+            />
           </div>
         </div>
 
+        {/* Description */}
         <Typography className="task-description" color="text.secondary" variant="body2">
           {task.description}
         </Typography>
@@ -75,7 +125,13 @@ const TaskCard = ({ task, onEdit, onDelete, onStatusChange, onSummarize, summary
         {Array.isArray(task.tags) && task.tags.length > 0 && (
           <div className="task-tags">
             {task.tags.map((tag, i) => (
-              <Chip key={i} label={`#${tag}`} size="small" variant="outlined" sx={{ fontSize: "0.7rem", height: 20 }} />
+              <Chip
+                key={i}
+                label={`#${tag}`}
+                size="small"
+                variant="outlined"
+                sx={{ fontSize: "0.68rem", height: 20, bgcolor: "rgba(241, 245, 249, 0.8)", borderColor: "#e2e8f0" }}
+              />
             ))}
           </div>
         )}
@@ -83,19 +139,24 @@ const TaskCard = ({ task, onEdit, onDelete, onStatusChange, onSummarize, summary
         {/* Subtask Progress */}
         {totalSubtasks > 0 && (
           <div className="subtask-progress">
-            <Typography variant="caption" color="text.secondary">
-              Subtasks: {completedSubtasks}/{totalSubtasks} ({subtaskPct}%)
-            </Typography>
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Typography variant="caption" color="text.secondary" fontWeight={600} fontSize="0.725rem">
+                Subtasks: {completedSubtasks}/{totalSubtasks}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" fontWeight={700} fontSize="0.725rem">
+                {subtaskPct}%
+              </Typography>
+            </Box>
             <div className="subtask-progress-bar">
               <div className="subtask-progress-fill" style={{ width: `${subtaskPct}%` }} />
             </div>
           </div>
         )}
 
-        {/* Metadata */}
-        <div className="task-meta">
+        {/* Meta Bar */}
+        <div className="task-meta" style={{ marginTop: 2 }}>
           {task.dueDate && (
-            <Typography color={overdue ? "error.main" : "text.secondary"} variant="caption">
+            <Typography color={overdue ? "error.main" : "text.secondary"} variant="caption" fontWeight={overdue ? 700 : 500}>
               📅 {new Date(task.dueDate).toLocaleDateString()}
             </Typography>
           )}
@@ -104,67 +165,89 @@ const TaskCard = ({ task, onEdit, onDelete, onStatusChange, onSummarize, summary
               ⏱️ {task.estimatedTime}m
             </Typography>
           )}
+          <Box display="flex" alignItems="center" gap={0.5} ml="auto">
+            <Avatar
+              src={task.assignedTo?.avatar || undefined}
+              sx={{ width: 22, height: 22, fontSize: "0.65rem", bgcolor: "primary.main", fontWeight: 700 }}
+              title={task.assignedTo?.name ? `Assigned to ${task.assignedTo.name}` : "Unassigned"}
+            >
+              {task.assignedTo?.name ? task.assignedTo.name[0].toUpperCase() : "?"}
+            </Avatar>
+          </Box>
         </div>
 
-        {/* AI Insight Boxes */}
+        {/* AI Insight Box */}
         {(summary || deadline) && (
-          <Box className="ai-insight">
+          <Box className="ai-insight" sx={{ mt: 0.5 }}>
             {summary && (
               <div>
-                <Typography variant="caption" fontWeight={700} color="primary">AI Summary:</Typography>
-                <Typography variant="caption" display="block">{summary}</Typography>
+                <Typography variant="caption" fontWeight={700} color="primary">✨ AI Summary:</Typography>
+                <Typography variant="caption" display="block" color="text.primary">{summary}</Typography>
               </div>
             )}
             {deadline && (
               <div>
-                <Typography variant="caption" fontWeight={700} color="secondary">Suggested Deadline:</Typography>
-                <Typography variant="caption" display="block">{deadline}</Typography>
+                <Typography variant="caption" fontWeight={700} color="secondary">✨ AI Deadline:</Typography>
+                <Typography variant="caption" display="block" color="text.primary">{deadline}</Typography>
               </div>
             )}
           </Box>
         )}
-
-        {/* Status Dropdown */}
-        <TextField
-          disabled={isWorking}
-          fullWidth
-          label="Change Status"
-          onChange={(event) => onStatusChange(task, event.target.value)}
-          select
-          size="small"
-          sx={{ mt: 1 }}
-          value={task.status}
-        >
-          <MenuItem value="Pending">Pending</MenuItem>
-          <MenuItem value="In Progress">In Progress</MenuItem>
-          <MenuItem value="Completed">Completed</MenuItem>
-        </TextField>
       </CardContent>
 
       <CardActions className="task-card-actions">
-        <Button disabled={isWorking} onClick={() => onEdit(task)} size="small">
-          Edit
+        <Button disabled={isWorking} onClick={() => onEdit(task)} size="small" sx={{ fontSize: "0.75rem", textTransform: "none", fontWeight: 600 }}>
+          ✏️ Edit
         </Button>
         <Button
           disabled={isWorking}
           onClick={() => onSummarize(task, "summary")}
           size="small"
           startIcon={workingAction === "summary" ? <CircularProgress size={12} /> : null}
+          sx={{ fontSize: "0.75rem", textTransform: "none", fontWeight: 600 }}
         >
-          Summary
+          ✨ Summary
         </Button>
         <Button
           disabled={isWorking}
           onClick={() => onSummarize(task, "deadline")}
           size="small"
           startIcon={workingAction === "deadline" ? <CircularProgress size={12} /> : null}
+          sx={{ fontSize: "0.75rem", textTransform: "none", fontWeight: 600 }}
         >
-          Deadline
+          ✨ Deadline
         </Button>
-        <Button color="error" disabled={isWorking} onClick={() => onDelete(task)} size="small">
-          Delete
-        </Button>
+        <IconButton
+          color="error"
+          disabled={isWorking}
+          onClick={() => onDelete(task)}
+          size="small"
+          sx={{ ml: "auto", p: 0.5 }}
+          title="Delete task"
+        >
+          🗑️
+        </IconButton>
       </CardActions>
+
+      {/* Quick Status Select Menu */}
+      <Menu
+        anchorEl={statusMenuAnchor}
+        open={Boolean(statusMenuAnchor)}
+        onClose={() => setStatusMenuAnchor(null)}
+        slotProps={{
+          paper: { sx: { minWidth: 150, borderRadius: 2, border: "1px solid #e2e8f0", elevation: 3 } },
+        }}
+      >
+        <MenuItem onClick={() => handleStatusSelect("Pending")} selected={task.status === "Pending"}>
+          ⏹ Pending
+        </MenuItem>
+        <MenuItem onClick={() => handleStatusSelect("In Progress")} selected={task.status === "In Progress"}>
+          ⏳ In Progress
+        </MenuItem>
+        <MenuItem onClick={() => handleStatusSelect("Completed")} selected={task.status === "Completed"}>
+          ✓ Completed
+        </MenuItem>
+      </Menu>
     </Card>
   );
 };
