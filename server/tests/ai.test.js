@@ -1,5 +1,7 @@
 import request from "supertest";
 import { app } from "./setup.js";
+import groq from "../src/ai/groq.js";
+import { generateSubtasks, parseNaturalLanguageTask } from "../src/services/ai.service.js";
 
 let token;
 
@@ -20,5 +22,23 @@ describe("AI API", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.priority).toBeDefined();
+  });
+
+  it("handles malformed (non-JSON) Groq response gracefully for generateSubtasks", async () => {
+    groq.chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "This is invalid non-JSON output from AI" } }],
+    });
+
+    const result = await generateSubtasks("Fix bug", "Fix the critical bug in production");
+    expect(result).toEqual([]);
+  });
+
+  it("handles malformed (non-JSON) Groq response gracefully for parseNaturalLanguageTask", async () => {
+    groq.chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "This is invalid non-JSON output from AI" } }],
+    });
+
+    const result = await parseNaturalLanguageTask("Do taxes by tomorrow");
+    expect(result).toBeNull();
   });
 });

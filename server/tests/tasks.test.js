@@ -205,4 +205,38 @@ describe("Task API", () => {
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
   });
+
+  it("preserves exact user subtasks on create and update without auto AI generation", async () => {
+    const userSubtasks = [
+      { title: "Revise inheritance", completed: false },
+      { title: "Practice 5 questions", completed: false },
+    ];
+
+    const createRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "OOP Study Session",
+        description: "Study object oriented programming concepts",
+        subtasks: userSubtasks,
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.data.subtasks).toHaveLength(2);
+    expect(createRes.body.data.subtasks[0].title).toBe("Revise inheritance");
+    expect(createRes.body.data.subtasks[1].title).toBe("Practice 5 questions");
+
+    const createdId = createRes.body.data._id;
+
+    const updateRes = await request(app)
+      .put(`/api/tasks/${createdId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ status: "In Progress" });
+
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.data.subtasks).toHaveLength(2);
+    expect(updateRes.body.data.subtasks[0].title).toBe("Revise inheritance");
+    expect(updateRes.body.data.subtasks[1].title).toBe("Practice 5 questions");
+  });
 });
+

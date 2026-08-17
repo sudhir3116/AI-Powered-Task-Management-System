@@ -17,6 +17,18 @@ const taskSchema = new mongoose.Schema(
       index: true,
     },
 
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      index: true,
+    },
+
+    assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      index: true,
+    },
+
     title: {
       type: String,
       required: true,
@@ -79,6 +91,20 @@ const taskSchema = new mongoose.Schema(
       },
     },
 
+    organization: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      index: true,
+      default: null,
+    },
+
+    sourceNote: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Note",
+      index: true,
+      default: null,
+    },
+
     aiSummary: {
       type: String,
       default: null,
@@ -94,5 +120,7 @@ taskSchema.index({ user: 1, createdAt: -1 });
 taskSchema.index({ user: 1, status: 1 });
 taskSchema.index({ user: 1, dueDate: 1 });
 taskSchema.index({ user: 1, priority: 1 });
+taskSchema.index({ organization: 1, createdAt: -1 });
+taskSchema.index({ organization: 1, status: 1 });
 
 export default mongoose.model("Task", taskSchema);

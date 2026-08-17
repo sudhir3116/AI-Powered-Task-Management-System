@@ -3,6 +3,10 @@ import {
     loginUserService,
     googleAuthService,
     getProfileService,
+    updateProfileService,
+    updatePasswordService,
+    forgotPasswordService,
+    resetPasswordService,
 } from "../services/auth.service.js";
 import asyncHandler from "../utils/asyncHandler.js";
 
@@ -56,4 +60,42 @@ export const getProfile = asyncHandler(async (req, res) => {
         success: true,
         data: { user },
     });
+});
+
+// Update Profile
+export const updateProfile = asyncHandler(async (req, res) => {
+    const user = await updateProfileService(req.user.id, req.body);
+
+    res.status(200).json({
+        success: true,
+        message: "Profile updated successfully",
+        data: { user },
+    });
+});
+
+// Update Password
+export const updatePassword = asyncHandler(async (req, res) => {
+    await updatePasswordService(req.user.id, req.body);
+
+    res.status(200).json({
+        success: true,
+        message: "Password updated successfully",
+    });
+});
+
+// Forgot Password
+export const forgotPassword = asyncHandler(async (req, res) => {
+    const result = await forgotPasswordService(req.body);
+
+    res.status(200).json(result);
+});
+
+// Reset Password
+export const resetPassword = asyncHandler(async (req, res) => {
+    const result = await resetPasswordService({
+        token: req.params.token,
+        newPassword: req.body.newPassword,
+    });
+
+    res.status(200).json(result);
 });

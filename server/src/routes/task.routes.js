@@ -5,13 +5,22 @@ import {
   createTask,
   getAllTasks,
   getStatistics,
+  getTaskById,
   updateTask,
   deleteTask,
+  getTaskComments,
+  createComment,
+  deleteComment,
+  getTaskActivity,
 } from "../controllers/task.controller.js";
 
 import authMiddleware from "../middleware/auth.middleware.js";
+import workspaceMiddleware from "../middleware/workspace.middleware.js";
 
 const router = express.Router();
+
+router.use(authMiddleware);
+router.use(workspaceMiddleware);
 
 /**
  * @swagger
@@ -204,6 +213,52 @@ router.delete(
   [param("id").isMongoId().withMessage("Invalid task id")],
   validateRequest,
   deleteTask
+);
+
+router.get(
+  "/:id",
+  authMiddleware,
+  [param("id").isMongoId().withMessage("Invalid task id")],
+  validateRequest,
+  getTaskById
+);
+
+router.get(
+  "/:id/comments",
+  authMiddleware,
+  [param("id").isMongoId().withMessage("Invalid task id")],
+  validateRequest,
+  getTaskComments
+);
+
+router.post(
+  "/:id/comments",
+  authMiddleware,
+  [
+    param("id").isMongoId().withMessage("Invalid task id"),
+    check("content").trim().notEmpty().withMessage("Comment content is required").isLength({ max: 1000 }).withMessage("Max length is 1000 characters"),
+  ],
+  validateRequest,
+  createComment
+);
+
+router.delete(
+  "/:id/comments/:commentId",
+  authMiddleware,
+  [
+    param("id").isMongoId().withMessage("Invalid task id"),
+    param("commentId").isMongoId().withMessage("Invalid comment id"),
+  ],
+  validateRequest,
+  deleteComment
+);
+
+router.get(
+  "/:id/activity",
+  authMiddleware,
+  [param("id").isMongoId().withMessage("Invalid task id")],
+  validateRequest,
+  getTaskActivity
 );
 
 export default router;

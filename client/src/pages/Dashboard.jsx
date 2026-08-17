@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Avatar,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -12,9 +14,13 @@ import {
   MenuItem,
   Pagination,
   Paper,
-  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import toast from "react-hot-toast";
@@ -22,17 +28,23 @@ import toast from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import TaskCard from "../components/TaskCard";
 import TaskForm from "../components/TaskForm";
+import Breadcrumbs from "../components/Breadcrumbs";
+import EmptyState from "../components/EmptyState";
+import { TaskCardSkeleton } from "../components/SkeletonLoader";
+import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/WorkspaceContext";
+import { useSocket } from "../context/SocketContext";
 import {
   createTask,
   deleteTask,
   getDeadlineSuggestion,
   getProductivitySuggestions,
-  getSubtaskBreakdown,
   getTaskSummary,
   getTasks,
   parseNaturalLanguage,
   updateTask,
 } from "../services/taskService";
+import { getWorkspaceAnalytics } from "../services/workspaceService";
 
 const initialFilters = {
   page: 1,
@@ -40,35 +52,45 @@ const initialFilters = {
   search: "",
   status: "",
   priority: "",
+  assignment: "",
   sort: "createdAt",
   order: "desc",
 };
 
-const PriorityBar = ({ label, count, total, color }) => {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-  return (
-    <div className="priority-bar-row">
-      <Typography variant="caption" color="text.secondary" sx={{ minWidth: 48 }}>{label}</Typography>
-      <div className="priority-bar-track">
-        <div className="priority-bar-fill" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, textAlign: "right" }}>{count}</Typography>
-    </div>
-  );
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
 };
 
 const Dashboard = () => {
+  const { user } = useAuth();
+  const { activeWorkspace } = useWorkspace();
+  const { socket } = useSocket();
+  const workspaceId = activeWorkspace?._id || activeWorkspace?.id;
+  const userRole = activeWorkspace?.role || "MEMBER";
+
   const [tasks, setTasks] = useState([]);
   const [filters, setFilters] = useState(initialFilters);
   const [searchInput, setSearchInput] = useState("");
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, totalTasks: 0 });
-  const [statistics, setStatistics] = useState({
-    total: 0, pending: 0, inProgress: 0, completed: 0,
-    overdue: 0, completionRate: 0,
-    priorityDistribution: { High: 0, Medium: 0, Low: 0 },
-    upcomingDeadlines: [],
+  const [analytics, setAnalytics] = useState({
+    totalTasks: 0,
+    completedTasks: 0,
+    inProgressTasks: 0,
+    pendingTasks: 0,
+    overdueTasks: 0,
+    completionRate: 0,
+    highPriorityTasks: 0,
+    mediumPriorityTasks: 0,
+    lowPriorityTasks: 0,
+    upcomingTasks: [],
+    memberStats: [],
   });
+
   const [loading, setLoading] = useState(true);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [error, setError] = useState("");
   const [formTask, setFormTask] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -76,11 +98,16 @@ const Dashboard = () => {
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [insights, setInsights] = useState({});
   const [workingAction, setWorkingAction] = useState({});
-  const [aiSubtasksForForm, setAiSubtasksForForm] = useState([]);
   const [productivitySuggestions, setProductivitySuggestions] = useState([]);
   const [loadingProductivity, setLoadingProductivity] = useState(false);
   const [nlText, setNlText] = useState("");
   const [parsingNl, setParsingNl] = useState(false);
+
+  const lastWorkspaceIdRef = useRef(workspaceId);
+  if (lastWorkspaceIdRef.current !== workspaceId) {
+    lastWorkspaceIdRef.current = workspaceId;
+    setFilters(initialFilters);
+  }
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -93,7 +120,6 @@ const Dashboard = () => {
         totalPages: response.totalPages || 1,
         totalTasks: response.totalTasks || 0,
       });
-      setStatistics((prev) => ({ ...prev, ...(response.statistics || {}) }));
     } catch (requestError) {
       const message = requestError.response?.data?.message || "Failed to load tasks.";
       setError(message);
@@ -101,12 +127,66 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, workspaceId]);
+
+  const fetchAnalytics = useCallback(async () => {
+    if (!workspaceId) return;
+    setLoadingAnalytics(true);
+    try {
+      const response = await getWorkspaceAnalytics(workspaceId);
+      setAnalytics(response.data || {});
+    } catch {
+      // Ignore analytics fetch error gracefully
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  }, [workspaceId]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchTasks();
   }, [fetchTasks]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchAnalytics();
+  }, [fetchAnalytics]);
+
+  // Real-time socket task listeners
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTaskCreated = (newTask) => {
+      if (newTask) {
+        setTasks((prev) => [newTask, ...prev.filter((t) => t._id !== newTask._id)]);
+        void fetchAnalytics();
+      }
+    };
+
+    const handleTaskUpdated = (updatedTask) => {
+      if (updatedTask) {
+        setTasks((prev) => prev.map((t) => (t._id === updatedTask._id ? updatedTask : t)));
+        void fetchAnalytics();
+      }
+    };
+
+    const handleTaskDeleted = ({ taskId }) => {
+      if (taskId) {
+        setTasks((prev) => prev.filter((t) => t._id !== taskId));
+        void fetchAnalytics();
+      }
+    };
+
+    socket.on("task.created", handleTaskCreated);
+    socket.on("task.updated", handleTaskUpdated);
+    socket.on("task.deleted", handleTaskDeleted);
+
+    return () => {
+      socket.off("task.created", handleTaskCreated);
+      socket.off("task.updated", handleTaskUpdated);
+      socket.off("task.deleted", handleTaskDeleted);
+    };
+  }, [socket, fetchAnalytics]);
 
   const updateFilters = (nextValues) => {
     setFilters((currentFilters) => ({ ...currentFilters, ...nextValues }));
@@ -117,9 +197,13 @@ const Dashboard = () => {
     updateFilters({ search: searchInput.trim(), page: 1 });
   };
 
+  const handleClearFilters = () => {
+    setSearchInput("");
+    setFilters(initialFilters);
+  };
+
   const handleOpenCreate = () => {
     setFormTask(null);
-    setAiSubtasksForForm([]);
     setIsFormOpen(true);
   };
 
@@ -127,7 +211,6 @@ const Dashboard = () => {
     if (!submitting) {
       setIsFormOpen(false);
       setFormTask(null);
-      setAiSubtasksForForm([]);
     }
   };
 
@@ -143,8 +226,8 @@ const Dashboard = () => {
       }
       setIsFormOpen(false);
       setFormTask(null);
-      setAiSubtasksForForm([]);
       updateFilters({ page: 1 });
+      void fetchAnalytics();
     } catch (requestError) {
       toast.error(requestError.response?.data?.message || "Unable to save task.");
     } finally {
@@ -161,6 +244,7 @@ const Dashboard = () => {
         currentTasks.map((t) => (t._id === task._id ? { ...t, status } : t))
       );
       toast.success("Status updated");
+      void fetchAnalytics();
     } catch (requestError) {
       toast.error(requestError.response?.data?.message || "Unable to update status.");
     } finally {
@@ -181,6 +265,7 @@ const Dashboard = () => {
       } else {
         fetchTasks();
       }
+      void fetchAnalytics();
     } catch (requestError) {
       toast.error(requestError.response?.data?.message || "Unable to delete task.");
     } finally {
@@ -191,9 +276,10 @@ const Dashboard = () => {
   const handleAiInsight = async (task, type) => {
     setWorkingAction((current) => ({ ...current, [task._id]: type }));
     try {
-      const response = type === "summary"
-        ? await getTaskSummary(task)
-        : await getDeadlineSuggestion(task);
+      const response =
+        type === "summary"
+          ? await getTaskSummary(task)
+          : await getDeadlineSuggestion(task);
       const value = type === "summary" ? response.summary : response.estimatedDeadline;
       setInsights((current) => ({
         ...current,
@@ -201,25 +287,6 @@ const Dashboard = () => {
       }));
     } catch (requestError) {
       toast.error(requestError.response?.data?.message || "AI request failed.");
-    } finally {
-      setWorkingAction((current) => ({ ...current, [task._id]: null }));
-    }
-  };
-
-  const handleAiSubtasks = async (task) => {
-    setWorkingAction((current) => ({ ...current, [task._id]: "subtasks" }));
-    try {
-      const response = await getSubtaskBreakdown({ title: task.title, description: task.description });
-      if (response.subtasks?.length > 0) {
-        setFormTask(task);
-        setAiSubtasksForForm(response.subtasks);
-        setIsFormOpen(true);
-        toast.success(`${response.subtasks.length} subtasks generated!`);
-      } else {
-        toast.error("Could not generate subtasks for this task.");
-      }
-    } catch (requestError) {
-      toast.error(requestError.response?.data?.message || "AI subtask generation failed.");
     } finally {
       setWorkingAction((current) => ({ ...current, [task._id]: null }));
     }
@@ -244,274 +311,409 @@ const Dashboard = () => {
     try {
       const response = await parseNaturalLanguage(nlText.trim());
       if (response.data) {
-        setFormTask({ ...response.data, _id: null });
-        setAiSubtasksForForm([]);
+        setFormTask({ ...response.data, _id: null, aiParsed: true });
         setIsFormOpen(true);
         setNlText("");
-        toast.success("Task parsed from your description! ✨");
+        toast.success("Task parsed from description! ✨");
       }
     } catch (requestError) {
-      toast.error(requestError.response?.data?.message || "Could not parse task. Try being more specific.");
+      toast.error(requestError.response?.data?.message || "Could not parse task.");
     } finally {
       setParsingNl(false);
     }
   };
 
-  const statCards = [
-    { label: "Total", value: statistics.total, color: "#4f46e5" },
-    { label: "Pending", value: statistics.pending, color: "#d97706" },
-    { label: "In Progress", value: statistics.inProgress, color: "#0ea5e9" },
-    { label: "Completed", value: statistics.completed, color: "#059669" },
-    { label: "Overdue", value: statistics.overdue, color: "#dc2626" },
-    { label: "Done %", value: `${statistics.completionRate || 0}%`, color: "#7c3aed" },
+  const summaryCards = [
+    { label: "Total Tasks", value: analytics.totalTasks ?? 0, color: "#4f46e5", bg: "rgba(79, 70, 229, 0.06)" },
+    { label: "Completed", value: analytics.completedTasks ?? 0, color: "#059669", bg: "rgba(5, 150, 105, 0.06)" },
+    { label: "In Progress", value: analytics.inProgressTasks ?? 0, color: "#0ea5e9", bg: "rgba(14, 165, 233, 0.06)" },
+    { label: "Pending", value: analytics.pendingTasks ?? 0, color: "#d97706", bg: "rgba(217, 119, 6, 0.06)" },
+    { label: "Overdue", value: analytics.overdueTasks ?? 0, color: "#dc2626", bg: "rgba(220, 38, 38, 0.06)" },
+    { label: "Completion Rate", value: `${analytics.completionRate ?? 0}%`, color: "#7c3aed", bg: "rgba(124, 58, 237, 0.06)" },
   ];
+
+  const userName = user?.name ? user.name.split(" ")[0] : "User";
+  const showTeamProductivity = (userRole === "OWNER" || userRole === "ADMIN") && analytics.memberStats?.length > 0;
+  const isFiltered = Boolean(filters.search || filters.status || filters.priority || filters.assignment);
 
   return (
     <div className="dashboard-page">
       <Navbar onCreateTask={handleOpenCreate} />
-      <main className="dashboard-content">
 
-        {/* Heading */}
-        <section className="dashboard-heading">
-          <div>
-            <Typography component="h1" variant="h4">My Tasks</Typography>
-            <Typography color="text.secondary" variant="body1">
-              AI-powered task management — prioritize, track, and deliver.
-            </Typography>
-          </div>
-          <Button onClick={handleOpenCreate} variant="contained" id="create-task-btn" size="large">
-            + Create Task
-          </Button>
+      <main className="dashboard-layout">
+        <Breadcrumbs items={[{ label: "Home", to: "/dashboard" }, { label: "Dashboard" }]} />
+
+        {/* Welcome Header */}
+        <section className="welcome-banner">
+          <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
+            <div>
+              <Typography component="h1" variant="h5" fontWeight={800}>
+                {getGreeting()}, {userName} 👋
+              </Typography>
+              <Typography color="text.secondary" variant="body2">
+                Workspace Overview — <strong>{activeWorkspace?.name || "Personal Workspace"}</strong> ({userRole})
+              </Typography>
+            </div>
+            <Button variant="contained" size="small" onClick={handleOpenCreate} sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700 }}>
+              + Create Task
+            </Button>
+          </Box>
         </section>
 
-        {/* Stats */}
-        <section className="stats-grid" aria-label="Task statistics">
-          {statCards.map(({ label, value, color }) => (
-            <Paper className="stat-card" elevation={0} key={label}>
-              <Typography color="text.secondary" variant="caption">{label}</Typography>
-              <Typography component="p" variant="h5" sx={{ color, fontWeight: 700 }}>{value}</Typography>
+        {/* Summary Metrics Row */}
+        <section className="summary-row" aria-label="Workspace metrics summary">
+          {summaryCards.map(({ label, value, color, bg }) => (
+            <Paper className="summary-card" elevation={0} key={label} style={{ backgroundColor: bg }}>
+              <Typography color="text.secondary" variant="caption" fontWeight={700}>{label}</Typography>
+              <Typography component="p" variant="h4" sx={{ color, fontWeight: 800 }}>
+                {value}
+              </Typography>
             </Paper>
           ))}
         </section>
 
-        {/* Analytics row: Priority Distribution + Upcoming Deadlines */}
-        <div className="analytics-grid">
-          {/* Priority Distribution */}
-          <Paper className="analytics-card" elevation={0}>
-            <Typography variant="subtitle2" fontWeight={700} gutterBottom>Priority Distribution</Typography>
-            <PriorityBar label="High" count={statistics.priorityDistribution?.High || 0} total={statistics.total} color="#dc2626" />
-            <PriorityBar label="Medium" count={statistics.priorityDistribution?.Medium || 0} total={statistics.total} color="#d97706" />
-            <PriorityBar label="Low" count={statistics.priorityDistribution?.Low || 0} total={statistics.total} color="#059669" />
-          </Paper>
 
-          {/* Upcoming Deadlines */}
-          <Paper className="analytics-card" elevation={0}>
-            <Typography variant="subtitle2" fontWeight={700} gutterBottom>Upcoming Deadlines (7 days)</Typography>
-            {statistics.upcomingDeadlines?.length > 0 ? (
-              <div className="deadline-list">
-                {statistics.upcomingDeadlines.map((task) => (
-                  <div key={task._id} className="deadline-item">
-                    <Typography variant="body2" className="deadline-title">{task.title}</Typography>
-                    <Typography variant="caption" color="warning.main">
-                      {new Date(task.dueDate).toLocaleDateString()}
-                    </Typography>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <Typography color="text.secondary" variant="body2">No upcoming deadlines in the next 7 days.</Typography>
-            )}
-          </Paper>
 
-          {/* AI Productivity Suggestions */}
-          <Paper className="analytics-card" elevation={0}>
-            <div className="analytics-card-header">
-              <Typography variant="subtitle2" fontWeight={700}>AI Productivity Coach</Typography>
-              <Button
-                disabled={loadingProductivity}
-                onClick={handleLoadProductivity}
-                size="small"
-                startIcon={loadingProductivity ? <CircularProgress size={12} /> : null}
-                variant="outlined"
-              >
-                {productivitySuggestions.length > 0 ? "Refresh" : "Get Tips"}
-              </Button>
-            </div>
-            {productivitySuggestions.length > 0 ? (
-              <ul className="productivity-list">
-                {productivitySuggestions.map((tip, i) => (
-                  <li key={i}><Typography variant="body2">{tip}</Typography></li>
-                ))}
-              </ul>
-            ) : (
-              <Typography color="text.secondary" variant="body2">
-                Click "Get Tips" for personalized AI productivity suggestions based on your task data.
-              </Typography>
-            )}
-          </Paper>
-        </div>
-
-        {/* Natural Language Task Creation */}
-        <Paper className="nl-create-panel" elevation={0}>
-          <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-            ✨ Create Task from Natural Language
-          </Typography>
-          <Typography color="text.secondary" variant="caption" display="block" sx={{ mb: 1.5 }}>
-            Describe your task in plain English — AI will structure it for you.
-          </Typography>
-          <Box component="form" onSubmit={handleNaturalLanguageCreate} className="nl-form">
-            <TextField
-              fullWidth
-              id="nl-input"
-              label="e.g. Write a blog post about AI productivity by next Friday, high priority"
-              onChange={(e) => setNlText(e.target.value)}
-              size="small"
-              value={nlText}
-            />
-            <Button
-              disabled={parsingNl || !nlText.trim()}
-              id="nl-submit-btn"
-              startIcon={parsingNl ? <CircularProgress size={14} /> : null}
-              type="submit"
-              variant="contained"
-              sx={{ whiteSpace: "nowrap" }}
-            >
-              {parsingNl ? "Parsing..." : "Parse & Create"}
-            </Button>
-          </Box>
-        </Paper>
-
-        {/* Filters */}
-        <Paper className="filters-panel" elevation={0}>
-          <Box className="filters-grid" component="form" onSubmit={handleSearchSubmit}>
-            <TextField
-              id="search-input"
-              label="Search tasks"
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Title or description"
-              size="small"
-              value={searchInput}
-            />
-            <TextField
-              id="filter-status"
-              label="Status"
-              onChange={(event) => updateFilters({ status: event.target.value, page: 1 })}
-              select
-              size="small"
-              value={filters.status}
-            >
-              <MenuItem value="">All statuses</MenuItem>
-              <MenuItem value="Pending">Pending</MenuItem>
-              <MenuItem value="In Progress">In Progress</MenuItem>
-              <MenuItem value="Completed">Completed</MenuItem>
-            </TextField>
-            <TextField
-              id="filter-priority"
-              label="Priority"
-              onChange={(event) => updateFilters({ priority: event.target.value, page: 1 })}
-              select
-              size="small"
-              value={filters.priority}
-            >
-              <MenuItem value="">All priorities</MenuItem>
-              <MenuItem value="High">High</MenuItem>
-              <MenuItem value="Medium">Medium</MenuItem>
-              <MenuItem value="Low">Low</MenuItem>
-            </TextField>
-            <TextField
-              id="filter-sort"
-              label="Sort by"
-              onChange={(event) => updateFilters({ sort: event.target.value, page: 1 })}
-              select
-              size="small"
-              value={filters.sort}
-            >
-              <MenuItem value="createdAt">Created date</MenuItem>
-              <MenuItem value="dueDate">Due date</MenuItem>
-              <MenuItem value="updatedAt">Last updated</MenuItem>
-              <MenuItem value="title">Title</MenuItem>
-              <MenuItem value="priority">Priority</MenuItem>
-            </TextField>
-            <TextField
-              id="filter-order"
-              label="Order"
-              onChange={(event) => updateFilters({ order: event.target.value, page: 1 })}
-              select
-              size="small"
-              value={filters.order}
-            >
-              <MenuItem value="desc">Descending</MenuItem>
-              <MenuItem value="asc">Ascending</MenuItem>
-            </TextField>
-            <Button id="search-btn" type="submit" variant="outlined" size="small">Search</Button>
-          </Box>
-        </Paper>
-
-        {error && <Alert className="dashboard-alert" severity="error">{error}</Alert>}
-
-        {loading ? (
-          <div className="tasks-grid">
-            {[1, 2, 3, 4, 5, 6].map((item) => (
-              <Skeleton className="task-skeleton" key={item} variant="rounded" />
-            ))}
-          </div>
-        ) : tasks.length === 0 ? (
-          <Paper className="empty-state" elevation={0}>
-            <div className="empty-state-icon">📋</div>
-            <Typography component="h2" variant="h5">No tasks found</Typography>
-            <Typography color="text.secondary" variant="body1">
-              {filters.search || filters.status || filters.priority
-                ? "Try adjusting your search or filters."
-                : "Create your first task to get started!"}
+        {/* Team Productivity Table for Owner/Admin */}
+        {showTeamProductivity && (
+          <Paper sx={{ p: 2.5, mb: 3, borderRadius: 3 }} elevation={0}>
+            <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+              👥 Team Workload & Productivity
             </Typography>
-            <Button onClick={handleOpenCreate} variant="contained" size="large" id="create-first-task-btn">
-              Create a task
-            </Button>
+            <TableContainer>
+              <Table size="small">
+                <TableHead sx={{ bgcolor: "#f8fafc" }}>
+                  <TableRow>
+                    <TableCell fontWeight={700}>Member</TableCell>
+                    <TableCell fontWeight={700}>Role</TableCell>
+                    <TableCell fontWeight={700} align="center">Total</TableCell>
+                    <TableCell fontWeight={700} align="center">Completed</TableCell>
+                    <TableCell fontWeight={700} align="center">In Progress</TableCell>
+                    <TableCell fontWeight={700} align="center">Overdue</TableCell>
+                    <TableCell fontWeight={700} align="right">Completion %</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {analytics.memberStats.map((m) => (
+                    <TableRow key={m.user._id || m.user.id} hover>
+                      <TableCell>
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Avatar src={m.user.avatar || undefined} sx={{ width: 26, height: 26, fontSize: "0.75rem" }}>
+                            {m.user.name ? m.user.name[0].toUpperCase() : "?"}
+                          </Avatar>
+                          <Typography variant="body2" fontWeight={600}>{m.user.name}</Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Chip label={m.role} size="small" sx={{ height: 18, fontSize: "0.65rem" }} />
+                      </TableCell>
+                      <TableCell align="center">{m.totalTasks}</TableCell>
+                      <TableCell align="center" style={{ color: "#059669", fontWeight: 700 }}>{m.completedTasks}</TableCell>
+                      <TableCell align="center" style={{ color: "#0ea5e9" }}>{m.inProgressTasks}</TableCell>
+                      <TableCell align="center" style={{ color: m.overdueTasks > 0 ? "#dc2626" : "inherit" }}>
+                        {m.overdueTasks}
+                      </TableCell>
+                      <TableCell align="right" style={{ fontWeight: 700 }}>{m.completionRate}%</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </Paper>
-        ) : (
-          <>
-            <Typography className="task-count" color="text.secondary" variant="body2">
-              {pagination.totalTasks} task{pagination.totalTasks === 1 ? "" : "s"} found
-            </Typography>
-            <div className="tasks-grid">
-              {tasks.map((task) => (
-                <TaskCard
-                  deadline={insights[task._id]?.deadline}
-                  key={task._id}
-                  onDelete={setTaskToDelete}
-                  onEdit={(selectedTask) => {
-                    setFormTask(selectedTask);
-                    setAiSubtasksForForm([]);
-                    setIsFormOpen(true);
-                  }}
-                  onStatusChange={handleStatusChange}
-                  onSummarize={handleAiInsight}
-                  onSubtasks={handleAiSubtasks}
-                  summary={insights[task._id]?.summary}
-                  task={task}
-                  workingAction={workingAction[task._id]}
-                />
-              ))}
-            </div>
-            {pagination.totalPages > 1 && (
-              <div className="pagination-wrap">
-                <Pagination
-                  count={pagination.totalPages}
-                  onChange={(_, page) => updateFilters({ page })}
-                  page={pagination.page}
-                  shape="rounded"
-                  color="primary"
-                />
-              </div>
-            )}
-          </>
         )}
+
+        {/* Main 2-Column Dashboard Body */}
+        <div className="dashboard-body-grid">
+          {/* LEFT MAIN AREA: Workspace Tasks & Controls */}
+          <div className="main-content-column">
+            {/* Filter & Search Toolbar */}
+            <Paper className="tasks-toolbar-panel" elevation={0}>
+              <div className="toolbar-header">
+                <Typography component="h2" variant="h6" fontWeight={700}>
+                  Tasks ({pagination.totalTasks})
+                </Typography>
+                {isFiltered && (
+                  <Button size="small" onClick={handleClearFilters} sx={{ fontSize: "0.75rem", p: 0.5 }}>
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+
+              <Box className="toolbar-controls" component="form" onSubmit={handleSearchSubmit}>
+                <TextField
+                  className="search-field"
+                  id="search-input"
+                  placeholder="Search tasks..."
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  size="small"
+                  value={searchInput}
+                  slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                />
+                <TextField
+                  className="filter-select"
+                  id="filter-assignment"
+                  onChange={(event) => updateFilters({ assignment: event.target.value, page: 1 })}
+                  select
+                  size="small"
+                  value={filters.assignment || ""}
+                  slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                >
+                  <MenuItem value="">All Workspace Tasks</MenuItem>
+                  <MenuItem value="my_tasks">My Created Tasks</MenuItem>
+                  <MenuItem value="assigned_to_me">Assigned to Me</MenuItem>
+                  <MenuItem value="assigned_by_me">Assigned by Me</MenuItem>
+                </TextField>
+                <TextField
+                  className="filter-select"
+                  id="filter-status"
+                  onChange={(event) => updateFilters({ status: event.target.value, page: 1 })}
+                  select
+                  size="small"
+                  value={filters.status}
+                  slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                >
+                  <MenuItem value="">All Statuses</MenuItem>
+                  <MenuItem value="Pending">Pending</MenuItem>
+                  <MenuItem value="In Progress">In Progress</MenuItem>
+                  <MenuItem value="Completed">Completed</MenuItem>
+                </TextField>
+                <TextField
+                  className="filter-select"
+                  id="filter-priority"
+                  onChange={(event) => updateFilters({ priority: event.target.value, page: 1 })}
+                  select
+                  size="small"
+                  value={filters.priority}
+                  slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                >
+                  <MenuItem value="">All Priorities</MenuItem>
+                  <MenuItem value="High">🔥 High</MenuItem>
+                  <MenuItem value="Medium">⚡ Medium</MenuItem>
+                  <MenuItem value="Low">🟢 Low</MenuItem>
+                </TextField>
+                <Button id="search-btn" type="submit" variant="contained" size="small" sx={{ borderRadius: 2, height: 40, px: 2.5, fontWeight: 700 }}>
+                  Search
+                </Button>
+              </Box>
+
+              {/* Quick Filter Presets Bar */}
+              <Box className="preset-filter-bar" mt={0.5}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>Presets:</Typography>
+                <Chip
+                  label="🔥 High Priority"
+                  size="small"
+                  onClick={() => updateFilters({ priority: filters.priority === "High" ? "" : "High", page: 1 })}
+                  color={filters.priority === "High" ? "error" : "default"}
+                  variant={filters.priority === "High" ? "filled" : "outlined"}
+                  sx={{ height: 22, fontSize: "0.68rem", cursor: "pointer" }}
+                />
+                <Chip
+                  label="⏳ In Progress"
+                  size="small"
+                  onClick={() => updateFilters({ status: filters.status === "In Progress" ? "" : "In Progress", page: 1 })}
+                  color={filters.status === "In Progress" ? "info" : "default"}
+                  variant={filters.status === "In Progress" ? "filled" : "outlined"}
+                  sx={{ height: 22, fontSize: "0.68rem", cursor: "pointer" }}
+                />
+                <Chip
+                  label="✓ Completed"
+                  size="small"
+                  onClick={() => updateFilters({ status: filters.status === "Completed" ? "" : "Completed", page: 1 })}
+                  color={filters.status === "Completed" ? "success" : "default"}
+                  variant={filters.status === "Completed" ? "filled" : "outlined"}
+                  sx={{ height: 22, fontSize: "0.68rem", cursor: "pointer" }}
+                />
+                <Chip
+                  label="👤 Assigned to Me"
+                  size="small"
+                  onClick={() => updateFilters({ assignment: filters.assignment === "assigned_to_me" ? "" : "assigned_to_me", page: 1 })}
+                  color={filters.assignment === "assigned_to_me" ? "primary" : "default"}
+                  variant={filters.assignment === "assigned_to_me" ? "filled" : "outlined"}
+                  sx={{ height: 22, fontSize: "0.68rem", cursor: "pointer" }}
+                />
+              </Box>
+            </Paper>
+
+            {error && <Alert className="dashboard-alert" severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
+
+            {/* Task Grid / Cards List */}
+            {loading ? (
+              <div className="tasks-grid">
+                {[1, 2, 3, 4, 5, 6].map((item) => (
+                  <TaskCardSkeleton key={item} />
+                ))}
+              </div>
+            ) : tasks.length === 0 ? (
+              <EmptyState
+                title={isFiltered ? "No matching tasks found" : "No tasks in this workspace"}
+                description={isFiltered ? "Try clearing or adjusting your search filters." : "Get started by creating your first task using AI or manual creation."}
+                actionLabel="+ Create Task"
+                onAction={handleOpenCreate}
+              />
+            ) : (
+              <>
+                <div className="tasks-grid">
+                  {tasks.map((task) => (
+                    <TaskCard
+                      deadline={insights[task._id]?.deadline}
+                      key={task._id}
+                      onDelete={setTaskToDelete}
+                      onEdit={(selectedTask) => {
+                        setFormTask(selectedTask);
+                        setIsFormOpen(true);
+                      }}
+                      onStatusChange={handleStatusChange}
+                      onSummarize={handleAiInsight}
+                      summary={insights[task._id]?.summary}
+                      task={task}
+                      workingAction={workingAction[task._id]}
+                    />
+                  ))}
+                </div>
+
+                {pagination.totalPages > 1 && (
+                  <div className="pagination-wrap">
+                    <Pagination
+                      count={pagination.totalPages}
+                      onChange={(_, page) => updateFilters({ page })}
+                      page={pagination.page}
+                      shape="rounded"
+                      color="primary"
+                      size="small"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* RIGHT SECONDARY COLUMN: Widgets Sidebar */}
+          <aside className="sidebar-column">
+            {/* Widget 1: Create with AI */}
+            <Paper className="sidebar-card nl-card" elevation={0}>
+              <Typography variant="subtitle2" fontWeight={800} gutterBottom className="card-heading">
+                ✨ Create Task with AI
+              </Typography>
+              <Typography color="text.secondary" variant="caption" display="block" sx={{ mb: 1.5 }}>
+                Describe a task in natural language (e.g. "Draft API documentation by 5 PM, high priority").
+              </Typography>
+              <Box component="form" onSubmit={handleNaturalLanguageCreate} className="nl-form-compact">
+                <TextField
+                  fullWidth
+                  id="nl-input"
+                  multiline
+                  rows={2}
+                  placeholder="e.g. Prepare TCS NQT prep deck by Friday, high priority"
+                  onChange={(e) => setNlText(e.target.value)}
+                  size="small"
+                  value={nlText}
+                  slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                />
+                <Box display="flex" gap={0.5} flexWrap="wrap" my={1}>
+                  <Chip
+                    label="💡 TCS NQT deck by Friday"
+                    size="small"
+                    onClick={() => setNlText("Prepare TCS NQT prep deck by Friday, high priority")}
+                    sx={{ fontSize: "0.68rem", height: 22, cursor: "pointer" }}
+                  />
+                  <Chip
+                    label="💡 Security audit report"
+                    size="small"
+                    onClick={() => setNlText("Review backend security audit report before 5 PM")}
+                    sx={{ fontSize: "0.68rem", height: 22, cursor: "pointer" }}
+                  />
+                </Box>
+                <Button
+                  disabled={parsingNl || !nlText.trim()}
+                  fullWidth
+                  id="nl-submit-btn"
+                  size="small"
+                  startIcon={parsingNl ? <CircularProgress size={14} /> : null}
+                  type="submit"
+                  variant="contained"
+                  sx={{ mt: 1, borderRadius: 2, py: 1, fontWeight: 700, textTransform: "none" }}
+                >
+                  {parsingNl ? "Analyzing prompt..." : "✨ Parse with AI & Create"}
+                </Button>
+              </Box>
+            </Paper>
+
+            {/* Widget 2: Upcoming Deadlines & Priority Focus */}
+            <Paper className="sidebar-card" elevation={0}>
+              <Typography variant="subtitle2" fontWeight={700} gutterBottom className="card-heading">
+                📅 Upcoming Deadlines (Next 7 Days)
+              </Typography>
+              {analytics.upcomingTasks?.length > 0 ? (
+                <div className="deadline-list">
+                  {analytics.upcomingTasks.map((task) => (
+                    <div key={task._id} className="deadline-item">
+                      <div className="deadline-item-info">
+                        <Typography variant="body2" fontWeight={600} className="deadline-title">
+                          {task.title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Due {new Date(task.dueDate).toLocaleDateString()}
+                        </Typography>
+                      </div>
+                      <Chip label={task.priority} size="small" color={task.priority === "High" ? "error" : "warning"} variant="outlined" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <Typography color="text.secondary" variant="caption" display="block">
+                  No upcoming deadlines in the next 7 days.
+                </Typography>
+              )}
+            </Paper>
+
+            {/* Widget 3: AI Productivity Insights */}
+            <Paper className="sidebar-card" elevation={0}>
+              <div className="sidebar-card-header">
+                <Typography variant="subtitle2" fontWeight={700} className="card-heading">
+                  💡 AI Productivity Coach
+                </Typography>
+                <Button
+                  disabled={loadingProductivity}
+                  onClick={handleLoadProductivity}
+                  size="small"
+                  startIcon={loadingProductivity ? <CircularProgress size={12} /> : null}
+                  variant="text"
+                  sx={{ fontSize: "0.75rem", minWidth: "auto", p: 0.5 }}
+                >
+                  {productivitySuggestions.length > 0 ? "Refresh" : "Get Tips"}
+                </Button>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="completion-widget">
+                <div className="completion-label-row">
+                  <Typography variant="caption" color="text.secondary" fontWeight={600}>Completion Rate</Typography>
+                  <Typography variant="caption" fontWeight={700} color="primary">{analytics.completionRate || 0}%</Typography>
+                </div>
+                <div className="completion-bar-track">
+                  <div className="completion-bar-fill" style={{ width: `${analytics.completionRate || 0}%` }} />
+                </div>
+              </div>
+
+              {productivitySuggestions.length > 0 ? (
+                <ul className="productivity-list">
+                  {productivitySuggestions.map((tip, i) => (
+                    <li key={i}><Typography variant="caption">{tip}</Typography></li>
+                  ))}
+                </ul>
+              ) : (
+                <Typography color="text.secondary" variant="caption" display="block" sx={{ mt: 1 }}>
+                  Click "Get Tips" to generate personalized productivity tips based on your active workload.
+                </Typography>
+              )}
+            </Paper>
+          </aside>
+        </div>
       </main>
 
       {/* Task Form Dialog */}
       <TaskForm
-        aiSubtasks={aiSubtasksForForm}
-        key={`${formTask?._id || "new"}-${aiSubtasksForForm.length}`}
+        key={formTask?._id || "new"}
         onClose={handleCloseForm}
         onSubmit={handleSubmitTask}
         open={isFormOpen}
@@ -521,15 +723,15 @@ const Dashboard = () => {
 
       {/* Delete Confirmation Dialog */}
       <Dialog onClose={() => setTaskToDelete(null)} open={Boolean(taskToDelete)}>
-        <DialogTitle>Delete task?</DialogTitle>
+        <DialogTitle fontWeight={700}>Delete task?</DialogTitle>
         <DialogContent>
           <DialogContentText>
             This action permanently removes "{taskToDelete?.title}". This cannot be undone.
           </DialogContentText>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setTaskToDelete(null)}>Cancel</Button>
-          <Button color="error" onClick={handleDelete} variant="contained" id="confirm-delete-btn">
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setTaskToDelete(null)} color="inherit">Cancel</Button>
+          <Button color="error" onClick={handleDelete} variant="contained" id="confirm-delete-btn" sx={{ borderRadius: 2, fontWeight: 700 }}>
             Delete
           </Button>
         </DialogActions>

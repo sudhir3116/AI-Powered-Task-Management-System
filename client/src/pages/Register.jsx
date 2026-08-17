@@ -4,8 +4,11 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Divider,
+  IconButton,
+  InputAdornment,
   Link as MuiLink,
   Paper,
   TextField,
@@ -19,6 +22,7 @@ const Register = () => {
   const navigate = useNavigate();
   const { isAuthenticated, loading, register, googleLogin } = useAuth();
   const [formData, setFormData] = useState({ name: "", email: "", password: "" });
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -37,10 +41,10 @@ const Register = () => {
 
     try {
       await register(formData);
-      toast.success("Account created! Please sign in.");
+      toast.success("Account created! Welcome to TaskFlow AI. Please sign in.");
       navigate("/login", { replace: true });
     } catch (error) {
-      const message = error.response?.data?.message || "Unable to create your account. Please try again.";
+      const message = error.response?.data?.message || "Unable to create your account. Please check your inputs.";
       setFormError(message);
       toast.error(message);
     } finally {
@@ -68,15 +72,33 @@ const Register = () => {
     <main className="auth-page">
       <div className="auth-brand">
         <div className="auth-brand-icon">⚡</div>
-        <Typography variant="h5" className="auth-brand-name">TaskFlow AI</Typography>
+        <Typography variant="h4" className="auth-brand-name">TaskFlow AI</Typography>
       </div>
+
+      <Chip
+        label="🚀 Free Plan Included • No Credit Card Required"
+        size="small"
+        sx={{
+          bgcolor: "rgba(5, 150, 105, 0.08)",
+          color: "success.main",
+          fontWeight: 700,
+          border: "1px solid rgba(5, 150, 105, 0.2)",
+          py: 0.5,
+          px: 1,
+        }}
+      />
+
       <Paper className="auth-card" elevation={0}>
         <Typography component="h1" variant="h4" className="auth-title">Create your workspace</Typography>
         <Typography color="text.secondary" variant="body1" className="auth-subtitle">
-          Plan smarter, execute faster, with AI by your side.
+          Join thousands of high-performing teams planning smarter with AI.
         </Typography>
 
-        {formError && <Alert severity="error" sx={{ mt: 2 }}>{formError}</Alert>}
+        {formError && (
+          <Alert severity="error" sx={{ mt: 2.5, borderRadius: 2 }} onClose={() => setFormError("")}>
+            {formError}
+          </Alert>
+        )}
 
         <Box className="auth-form" component="form" onSubmit={handleSubmit}>
           <TextField
@@ -89,6 +111,7 @@ const Register = () => {
             onChange={handleChange}
             required
             value={formData.name}
+            slotProps={{ input: { sx: { borderRadius: 2 } } }}
           />
           <TextField
             autoComplete="email"
@@ -100,18 +123,36 @@ const Register = () => {
             required
             type="email"
             value={formData.email}
+            slotProps={{ input: { sx: { borderRadius: 2 } } }}
           />
           <TextField
             autoComplete="new-password"
             fullWidth
-            helperText="Minimum 6 characters"
+            helperText="Minimum 6 characters with letters & numbers"
             id="password"
             label="Password"
             name="password"
             onChange={handleChange}
             required
-            type="password"
+            type={showPassword ? "text" : "password"}
             value={formData.password}
+            slotProps={{
+              input: {
+                sx: { borderRadius: 2 },
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label="toggle password visibility"
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      size="small"
+                    >
+                      {showPassword ? "🙈" : "👁️"}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
           <Button
             disabled={submitting}
@@ -120,13 +161,22 @@ const Register = () => {
             size="large"
             type="submit"
             variant="contained"
+            sx={{
+              borderRadius: 2.5,
+              py: 1.4,
+              fontWeight: 700,
+              fontSize: "0.95rem",
+              textTransform: "none",
+              boxShadow: "0 4px 14px rgba(79, 70, 229, 0.35)",
+              mt: 1,
+            }}
           >
-            {submitting ? <><CircularProgress size={18} sx={{ mr: 1, color: "white" }} /> Creating account...</> : "Create account"}
+            {submitting ? <><CircularProgress size={18} sx={{ mr: 1, color: "white" }} /> Creating account...</> : "Get Started Free"}
           </Button>
         </Box>
 
         <div className="auth-divider">
-          <Divider><Typography color="text.secondary" variant="caption">OR CONTINUE WITH</Typography></Divider>
+          <Divider><Typography color="text.secondary" variant="caption" fontWeight={700}>OR CONTINUE WITH</Typography></Divider>
         </div>
 
         <div className="google-btn-wrapper">
@@ -143,7 +193,7 @@ const Register = () => {
 
         <Typography className="auth-footer" variant="body2">
           Already have an account?{" "}
-          <MuiLink component={Link} to="/login" underline="hover" fontWeight={600}>
+          <MuiLink component={Link} to="/login" underline="hover" fontWeight={700} color="primary.main">
             Sign in
           </MuiLink>
         </Typography>

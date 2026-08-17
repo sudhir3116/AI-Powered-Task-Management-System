@@ -13,6 +13,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && window.location.pathname !== "/login") {
       sessionStorage.removeItem("token");
       sessionStorage.removeItem("user");
+      sessionStorage.removeItem("activeWorkspaceId");
       window.location.assign("/login");
     }
 
@@ -22,9 +23,14 @@ api.interceptors.response.use(
 
 api.interceptors.request.use((config) => {
   const token = sessionStorage.getItem("token");
+  const activeWorkspaceId = sessionStorage.getItem("activeWorkspaceId");
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (activeWorkspaceId) {
+    config.headers["X-Workspace-Id"] = activeWorkspaceId;
   }
 
   return config;
